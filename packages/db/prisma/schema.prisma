@@ -1,0 +1,480 @@
+// AI Knowledge Automation Platform — data model
+// ---------------------------------------------------------------------------
+// Conventions:
+//   * Application-generated, prefixed string ids (see @akp/core `newId`).
+//   * All tenant-scoped tables carry `organizationId` and index it; the
+//     repository layer is responsible for scoping every query by tenant.
+//   * snake_case table/column names via @@map/@map for clean SQL & migrations.
+//   * Vector columns use the pgvector extension; similarity indexes are created
+//     in raw migration SQL because Prisma cannot yet model vector indexes.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [vector, pg_trgm, uuidOssp(map: "uuid-ossp")]
+}
+
+// ------------------------------- Enums -------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+enum OrganizationStatus {
+  ACTIVE
+  SUSPENDED
+  DELETED
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  REVOKED
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  REVOKED
+}
+
+enum DataSourceType {
+  UPLOAD
+  GOOGLE_DRIVE
+  NOTION
+  CONFLUENCE
+  GITHUB
+  SLACK
+  WEB
+  DATABASE
+  API
+}
+
+enum DataSourceStatus {
+  CONNECTED
+  SYNCING
+  ERROR
+  DISABLED
+}
+
+enum DocumentStatus {
+  PENDING
+  PROCESSING
+  INDEXED
+  FAILED
+  ARCHIVED
+}
+
+enum JobType {
+  INGEST_DOCUMENT
+  SYNC_SOURCE
+  REEMBED
+  EVALUATE
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum MessageRole {
+  USER
+  ASSISTANT
+  SYSTEM
+  TOOL
+}
+
+enum EvaluationStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+enum UsageKind {
+  EMBEDDING
+  CHAT_COMPLETION
+  RERANK
+}
+
+// ----------------------------- Identity ------------------------------------
+
+model Organization {
+  id        String             @id
+  name      String
+  slug      String             @unique
+  status    OrganizationStatus @default(ACTIVE)
+  // Soft settings (plan limits, feature flags) kept as JSON for flexibility.
+  settings  Json               @default("{}")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+  deletedAt DateTime?          @map("deleted_at")
+
+  memberships   Membership[]
+  apiKeys       ApiKey[]
+  invites       Invite[]
+  dataSources   DataSource[]
+  documents     Document[]
+  conversations Conversation[]
+  auditLogs     AuditLog[]
+  ingestionJobs IngestionJob[]
+  evaluations   Evaluation[]
+  usageEvents   UsageEvent[]
+
+  @@index([status])
+  @@map("organizations")
+}
+
+model User {
+  id           String     @id
+  email        String     @unique
+  // Argon2id hash; null for users who authenticate solely via SSO (future).
+  passwordHash String?    @map("password_hash")
+  name         String
+  status       UserStatus @default(ACTIVE)
+  // Optional URL to an avatar; kept small and validated at the API boundary.
+  avatarUrl    String?    @map("avatar_url")
+  lastLoginAt  DateTime?  @map("last_login_at")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  memberships   Membership[]
+  sessions      Session[]
+  conversations Conversation[]
+  auditLogs     AuditLog[]
+
+  @@index([status])
+  @@map("users")
+}
+
+model Membership {
+  id             String           @id
+  organizationId String           @map("organization_id")
+  userId         String           @map("user_id")
+  role           Role             @default(MEMBER)
+  status         MembershipStatus @default(ACTIVE)
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
+  @@map("memberships")
+}
+
+model Session {
+  id        String   @id
+  userId    String   @map("user_id")
+  // SHA-256 hash of the opaque refresh token; the raw token is never stored.
+  tokenHash String   @unique @map("token_hash")
+  // Rotation lineage: points at the session this one replaced (reuse detection).
+  replacedById String? @map("replaced_by_id")
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
+  expiresAt DateTime @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model ApiKey {
+  id             String       @id
+  organizationId String       @map("organization_id")
+  name           String
+  // SHA-256 hash of the secret; only a short prefix is stored for display.
+  keyHash        String       @unique @map("key_hash")
+  prefix         String       @map("prefix")
+  status         ApiKeyStatus @default(ACTIVE)
+  scopes         String[]     @default([])
+  createdById    String?      @map("created_by_id")
+  lastUsedAt     DateTime?    @map("last_used_at")
+  expiresAt      DateTime?    @map("expires_at")
+  revokedAt      DateTime?    @map("revoked_at")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@map("api_keys")
+}
+
+model Invite {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  email          String
+  role           Role      @default(MEMBER)
+  tokenHash      String    @unique @map("token_hash")
+  invitedById    String?   @map("invited_by_id")
+  acceptedAt     DateTime? @map("accepted_at")
+  expiresAt      DateTime  @map("expires_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, email])
+  @@map("invites")
+}
+
+// --------------------------- Knowledge base --------------------------------
+
+model DataSource {
+  id             String           @id
+  organizationId String           @map("organization_id")
+  type           DataSourceType
+  name           String
+  status         DataSourceStatus @default(CONNECTED)
+  // Provider-specific connection metadata (never secrets — those live in a vault).
+  config         Json             @default("{}")
+  lastSyncedAt   DateTime?        @map("last_synced_at")
+  lastError      String?          @map("last_error")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    Document[]
+
+  @@index([organizationId, status])
+  @@map("data_sources")
+}
+
+model Document {
+  id             String         @id
+  organizationId String         @map("organization_id")
+  dataSourceId   String?        @map("data_source_id")
+  title          String
+  // Original source URI or storage key.
+  sourceUri      String?        @map("source_uri")
+  mimeType       String         @map("mime_type")
+  // Content hash for idempotent re-ingestion / dedup.
+  contentHash    String         @map("content_hash")
+  status         DocumentStatus @default(PENDING)
+  byteSize       Int            @default(0) @map("byte_size")
+  metadata       Json           @default("{}")
+  error          String?
+  indexedAt      DateTime?      @map("indexed_at")
+  createdAt      DateTime       @default(now()) @map("created_at")
+  updatedAt      DateTime       @updatedAt @map("updated_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dataSource   DataSource?     @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+  chunks       DocumentChunk[]
+
+  @@unique([organizationId, contentHash])
+  @@index([organizationId, status])
+  @@index([dataSourceId])
+  @@map("documents")
+}
+
+model DocumentChunk {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  documentId     String   @map("document_id")
+  // Ordinal position within the document.
+  chunkIndex     Int      @map("chunk_index")
+  content        String
+  tokenCount     Int      @default(0) @map("token_count")
+  // pgvector embedding. Dimension must match EMBEDDING_DIMENSIONS (default 1536).
+  embedding      Unsupported("vector(1536)")?
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, chunkIndex])
+  @@index([organizationId])
+  @@map("document_chunks")
+}
+
+// ----------------------------- Conversations -------------------------------
+
+model Conversation {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  userId         String   @map("user_id")
+  title          String   @default("New conversation")
+  // Optional retrieval scoping (limit to specific sources).
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages     Message[]
+
+  @@index([organizationId, userId])
+  @@index([userId, updatedAt])
+  @@map("conversations")
+}
+
+model Message {
+  id             String      @id
+  organizationId String      @map("organization_id")
+  conversationId String      @map("conversation_id")
+  role           MessageRole
+  content        String
+  // Aggregated per-message telemetry captured at generation time.
+  promptTokens     Int?      @map("prompt_tokens")
+  completionTokens Int?      @map("completion_tokens")
+  latencyMs        Int?      @map("latency_ms")
+  model            String?
+  metadata         Json      @default("{}")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  citations    Citation[]
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
+}
+
+model Citation {
+  id         String   @id
+  messageId  String   @map("message_id")
+  documentId String   @map("document_id")
+  chunkId    String?  @map("chunk_id")
+  // Similarity/rerank score that justified this citation (0..1).
+  score      Float
+  // Character span within the assistant message that this citation supports.
+  spanStart  Int?     @map("span_start")
+  spanEnd    Int?     @map("span_end")
+  snippet    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@index([documentId])
+  @@map("citations")
+}
+
+// ----------------------- Jobs, evals, telemetry ----------------------------
+
+model IngestionJob {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  type           JobType
+  status         JobStatus @default(QUEUED)
+  // Correlates with the BullMQ job id for cross-referencing queue state.
+  queueJobId     String?   @map("queue_job_id")
+  payload        Json      @default("{}")
+  attempts       Int       @default(0)
+  error          String?
+  startedAt      DateTime? @map("started_at")
+  finishedAt     DateTime? @map("finished_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([type, status])
+  @@map("ingestion_jobs")
+}
+
+model Evaluation {
+  id             String           @id
+  organizationId String           @map("organization_id")
+  name           String
+  status         EvaluationStatus @default(PENDING)
+  // Aggregate scores computed once the run completes.
+  summary        Json             @default("{}")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  finishedAt     DateTime?        @map("finished_at")
+
+  organization Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  results      EvaluationResult[]
+
+  @@index([organizationId, status])
+  @@map("evaluations")
+}
+
+model EvaluationResult {
+  id            String   @id
+  evaluationId  String   @map("evaluation_id")
+  question      String
+  expected      String?
+  answer        String
+  // Metric scores: faithfulness, answer relevance, context precision/recall.
+  scores        Json     @default("{}")
+  // Whether a hallucination was detected for this sample.
+  hallucinated  Boolean  @default(false)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  evaluation Evaluation @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+
+  @@index([evaluationId])
+  @@map("evaluation_results")
+}
+
+model UsageEvent {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  kind           UsageKind
+  model          String
+  promptTokens     Int     @default(0) @map("prompt_tokens")
+  completionTokens Int     @default(0) @map("completion_tokens")
+  totalTokens      Int     @default(0) @map("total_tokens")
+  // Cost in micro-USD (integer) to avoid floating point accumulation error.
+  costMicros       Int     @default(0) @map("cost_micros")
+  latencyMs        Int     @default(0) @map("latency_ms")
+  metadata         Json    @default("{}")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, kind, createdAt])
+  @@map("usage_events")
+}
+
+// ------------------------------ Audit --------------------------------------
+
+model AuditLog {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  // Null for system-initiated actions.
+  actorUserId    String?  @map("actor_user_id")
+  // Machine-readable action, e.g. "auth.login", "document.deleted".
+  action         String
+  // Target resource type + id, e.g. resourceType="document".
+  resourceType   String?  @map("resource_type")
+  resourceId     String?  @map("resource_id")
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  // Structured, non-sensitive context about the change.
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actor        User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, action, createdAt])
+  @@index([actorUserId])
+  @@map("audit_logs")
+}
