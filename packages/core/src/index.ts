@@ -4,4 +4,8 @@ export * from './pagination.js';
 export * from './ids.js';
 export * from './redact.js';
 export * from './rbac.js';
+export * from './scopes.js';
 export * from './types.js';
+export * from './crypto/encryption.js';
+export * from './security/pii.js';
+export * from './security/prompt-guard.js';

@@ -1,38 +1,24 @@
 import type { FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
-import { HTTP_LATENCY_BUCKETS, Metrics } from '@akp/observability';
 
 /**
- * Prometheus metrics: per-request latency histogram and total counter labeled
- * by method, route (template, not raw path, to avoid label cardinality blowup),
- * and status code. Exposes `GET /metrics` in the platform text format.
+ * Prometheus metrics endpoint. Instruments live on the shared `AppMetrics`
+ * catalog constructed in the composition root so HTTP and AI metrics share a
+ * single registry. This hook records per-request latency/count labeled by
+ * method, route template (not raw path, to bound label cardinality), and status.
  */
 const metricsPlugin: FastifyPluginAsync = async (fastify) => {
-  const metrics = new Metrics({ service: fastify.container.config.observability.serviceName });
-
-  const requestDuration = metrics.histogram({
-    name: 'http_request_duration_seconds',
-    help: 'HTTP request duration in seconds',
-    labelNames: ['method', 'route', 'status_code'],
-    buckets: HTTP_LATENCY_BUCKETS,
-  });
-
-  const requestTotal = metrics.counter({
-    name: 'http_requests_total',
-    help: 'Total number of HTTP requests',
-    labelNames: ['method', 'route', 'status_code'],
-  });
+  const { metrics } = fastify.container;
 
   fastify.addHook('onResponse', (request, reply, done) => {
-    // routeOptions.url is the templated path (e.g. /v1/auth/:id); fall back to 'unknown'.
     const route = request.routeOptions.url ?? 'unknown';
     const labels = {
       method: request.method,
       route,
       status_code: String(reply.statusCode),
     };
-    requestDuration.observe(labels, reply.elapsedTime / 1000);
-    requestTotal.inc(labels);
+    metrics.httpRequestDuration.observe(labels, reply.elapsedTime / 1000);
+    metrics.httpRequestsTotal.inc(labels);
     done();
   });
 

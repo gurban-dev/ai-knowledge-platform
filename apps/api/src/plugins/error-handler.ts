@@ -1,6 +1,6 @@
 import type { FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
-import { hasZodFastifySchemaValidationErrors } from 'fastify-type-provider-zod';
+import { ZodError } from 'zod';
 import {
   AppError,
   NotFoundError,
@@ -41,11 +41,26 @@ const errorHandlerPlugin: FastifyPluginAsync = async (fastify) => {
   });
 };
 
+/**
+ * Extract a {@link ZodError} from whatever `fastify-type-provider-zod` surfaced.
+ * The v2 validator compiler returns the raw `ZodError`; Fastify may hand it to
+ * the error handler directly or nested under `error.validation`.
+ */
+function extractZodError(error: unknown): ZodError | null {
+  if (error instanceof ZodError) return error;
+  if (typeof error === 'object' && error !== null && 'validation' in error) {
+    const validation = (error as { validation: unknown }).validation;
+    if (validation instanceof ZodError) return validation;
+  }
+  return null;
+}
+
 function normalize(error: unknown): AppError {
   // Zod request-validation failures raised by fastify-type-provider-zod.
-  if (hasZodFastifySchemaValidationErrors(error)) {
-    const details = error.validation.map((issue) => ({
-      path: issue.instancePath,
+  const zodError = extractZodError(error);
+  if (zodError) {
+    const details = zodError.issues.map((issue) => ({
+      path: `/${issue.path.join('/')}`,
       message: issue.message,
     }));
     return new ValidationError('Request validation failed', details);
@@ -56,11 +71,8 @@ function normalize(error: unknown): AppError {
     const status = Number((error as { statusCode: unknown }).statusCode);
     if (status === 429) return new RateLimitError();
     if (status === 400) {
-      const message =
-        typeof (error as { message?: unknown }).message === 'string'
-          ? (error as { message: string }).message
-          : 'Bad request';
-      return new ValidationError(message);
+      const message = (error as { message?: unknown }).message;
+      return new ValidationError(typeof message === 'string' ? message : 'Bad request');
     }
   }
 

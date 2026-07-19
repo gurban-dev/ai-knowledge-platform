@@ -114,6 +114,79 @@ enum UsageKind {
   RERANK
 }
 
+enum WebhookEndpointStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum WebhookDeliveryStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  DEAD
+}
+
+enum FeedbackRating {
+  UP
+  DOWN
+}
+
+enum FeedbackReason {
+  INCORRECT
+  INCOMPLETE
+  OUTDATED
+  UNSAFE
+  OTHER
+}
+
+enum IdempotencyStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum AclSubjectType {
+  USER
+  TEAM
+  ROLE
+}
+
+enum AclPermission {
+  READ
+  WRITE
+  ADMIN
+}
+
+enum CollectionVisibility {
+  PRIVATE
+  TEAM
+  ORGANIZATION
+}
+
+enum SsoProvider {
+  OIDC
+  SAML
+}
+
+enum SubscriptionStatus {
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  SUSPENDED
+}
+
+enum ToolSideEffect {
+  READ
+  WRITE
+  DESTRUCTIVE
+}
+
+enum ToolInvocationStatus {
+  SUCCEEDED
+  FAILED
+  DENIED
+}
+
 // ----------------------------- Identity ------------------------------------
 
 model Organization {
@@ -127,16 +200,30 @@ model Organization {
   updatedAt DateTime           @updatedAt @map("updated_at")
   deletedAt DateTime?          @map("deleted_at")
 
-  memberships   Membership[]
-  apiKeys       ApiKey[]
-  invites       Invite[]
-  dataSources   DataSource[]
-  documents     Document[]
-  conversations Conversation[]
-  auditLogs     AuditLog[]
-  ingestionJobs IngestionJob[]
-  evaluations   Evaluation[]
-  usageEvents   UsageEvent[]
+  memberships       Membership[]
+  apiKeys           ApiKey[]
+  invites           Invite[]
+  dataSources       DataSource[]
+  documents         Document[]
+  conversations     Conversation[]
+  auditLogs         AuditLog[]
+  ingestionJobs     IngestionJob[]
+  evaluations       Evaluation[]
+  usageEvents       UsageEvent[]
+  webhookEndpoints  WebhookEndpoint[]
+  webhookDeliveries WebhookDelivery[]
+  messageFeedback   MessageFeedback[]
+  idempotencyKeys   IdempotencyKey[]
+  teams             Team[]
+  collections       Collection[]
+  promptTemplates   PromptTemplate[]
+  storedObjects     StoredObject[]
+  ssoConnections    SsoConnection[]
+  scimTokens        ScimToken[]
+  subscription      Subscription?
+  documentAcls      DocumentAcl[]
+  toolInvocations   ToolInvocation[]
+  budgets           BudgetPeriod[]
 
   @@index([status])
   @@map("organizations")
@@ -152,6 +239,13 @@ model User {
   // Optional URL to an avatar; kept small and validated at the API boundary.
   avatarUrl    String?    @map("avatar_url")
   lastLoginAt  DateTime?  @map("last_login_at")
+  // --- Multi-factor authentication (TOTP) ---
+  mfaEnabled       Boolean  @default(false) @map("mfa_enabled")
+  // Envelope-encrypted TOTP shared secret (never stored in plaintext).
+  mfaSecret        String?  @map("mfa_secret")
+  // SHA-256 hashes of single-use recovery codes.
+  mfaRecoveryCodes String[] @default([]) @map("mfa_recovery_codes")
+  mfaVerifiedAt    DateTime? @map("mfa_verified_at")
   createdAt    DateTime   @default(now()) @map("created_at")
   updatedAt    DateTime   @updatedAt @map("updated_at")
 
@@ -159,6 +253,7 @@ model User {
   sessions      Session[]
   conversations Conversation[]
   auditLogs     AuditLog[]
+  feedback      MessageFeedback[]
 
   @@index([status])
   @@map("users")
@@ -206,13 +301,19 @@ model ApiKey {
   id             String       @id
   organizationId String       @map("organization_id")
   name           String
+  description    String?
   // SHA-256 hash of the secret; only a short prefix is stored for display.
   keyHash        String       @unique @map("key_hash")
   prefix         String       @map("prefix")
   status         ApiKeyStatus @default(ACTIVE)
   scopes         String[]     @default([])
+  // Optional per-key request budget (requests/minute); falls back to config default.
+  rateLimitPerMinute Int?     @map("rate_limit_per_minute")
+  // Optional CIDR/IP allowlist; empty means "any source".
+  ipAllowlist    String[]     @default([]) @map("ip_allowlist")
   createdById    String?      @map("created_by_id")
   lastUsedAt     DateTime?    @map("last_used_at")
+  lastRotatedAt  DateTime?    @map("last_rotated_at")
   expiresAt      DateTime?    @map("expires_at")
   revokedAt      DateTime?    @map("revoked_at")
   createdAt      DateTime     @default(now()) @map("created_at")
@@ -248,8 +349,12 @@ model DataSource {
   type           DataSourceType
   name           String
   status         DataSourceStatus @default(CONNECTED)
-  // Provider-specific connection metadata (never secrets — those live in a vault).
+  // Provider-specific NON-secret connection metadata (ids, workspace, filters).
   config         Json             @default("{}")
+  // Envelope-encrypted connector credentials (OAuth tokens, PATs). Never plaintext.
+  secretCiphertext String?        @map("secret_ciphertext")
+  // Incremental sync cursor/delta token (e.g. Drive pageToken, GitHub since).
+  syncCursor     String?          @map("sync_cursor")
   lastSyncedAt   DateTime?        @map("last_synced_at")
   lastError      String?          @map("last_error")
   createdAt      DateTime         @default(now()) @map("created_at")
@@ -267,27 +372,76 @@ model Document {
   organizationId String         @map("organization_id")
   dataSourceId   String?        @map("data_source_id")
   title          String
-  // Original source URI or storage key.
+  // Original source URI or object-storage key.
   sourceUri      String?        @map("source_uri")
+  // Object-storage blob id when the original file is retained.
+  storedObjectId String?        @map("stored_object_id")
   mimeType       String         @map("mime_type")
   // Content hash for idempotent re-ingestion / dedup.
   contentHash    String         @map("content_hash")
   status         DocumentStatus @default(PENDING)
-  byteSize       Int            @default(0) @map("byte_size")
+  // BigInt: individual documents can exceed the 2 GiB Int ceiling.
+  byteSize       BigInt         @default(0) @map("byte_size")
+  // Chunking strategy used for the current index (reproducibility).
+  chunkingStrategy String       @default("recursive-v1") @map("chunking_strategy")
+  // Soft-delete / tombstone for upstream deletion & GDPR erase.
+  deletedAt      DateTime?      @map("deleted_at")
   metadata       Json           @default("{}")
   error          String?
   indexedAt      DateTime?      @map("indexed_at")
+  version        Int            @default(1)
   createdAt      DateTime       @default(now()) @map("created_at")
   updatedAt      DateTime       @updatedAt @map("updated_at")
 
-  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  dataSource   DataSource?     @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
-  chunks       DocumentChunk[]
+  organization  Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  dataSource    DataSource?      @relation(fields: [dataSourceId], references: [id], onDelete: SetNull)
+  storedObject  StoredObject?    @relation(fields: [storedObjectId], references: [id], onDelete: SetNull)
+  chunks        DocumentChunk[]
+  acls          DocumentAcl[]
+  versions      DocumentVersion[]
+  collections   CollectionDocument[]
 
   @@unique([organizationId, contentHash])
   @@index([organizationId, status])
   @@index([dataSourceId])
+  @@index([organizationId, deletedAt])
   @@map("documents")
+}
+
+model DocumentVersion {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  documentId     String   @map("document_id")
+  version        Int
+  contentHash    String   @map("content_hash")
+  byteSize       BigInt   @default(0) @map("byte_size")
+  storedObjectId String?  @map("stored_object_id")
+  metadata       Json     @default("{}")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, version])
+  @@index([organizationId, documentId])
+  @@map("document_versions")
+}
+
+model DocumentAcl {
+  id             String         @id
+  organizationId String         @map("organization_id")
+  documentId     String         @map("document_id")
+  subjectType    AclSubjectType @map("subject_type")
+  // userId, teamId, or Role name depending on subjectType.
+  subjectId      String         @map("subject_id")
+  permission     AclPermission  @default(READ)
+  createdAt      DateTime       @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  document     Document     @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([documentId, subjectType, subjectId])
+  @@index([organizationId, subjectType, subjectId])
+  @@map("document_acls")
 }
 
 model DocumentChunk {
@@ -300,6 +454,10 @@ model DocumentChunk {
   tokenCount     Int      @default(0) @map("token_count")
   // pgvector embedding. Dimension must match EMBEDDING_DIMENSIONS (default 1536).
   embedding      Unsupported("vector(1536)")?
+  // Provenance of the embedding so a model/dimension change can be reconciled
+  // by targeted re-embedding rather than silently corrupting similarity search.
+  embeddingModel   String? @map("embedding_model")
+  embeddingVersion Int     @default(1) @map("embedding_version")
   metadata       Json     @default("{}")
   createdAt      DateTime @default(now()) @map("created_at")
 
@@ -345,8 +503,9 @@ model Message {
   metadata         Json      @default("{}")
   createdAt        DateTime  @default(now()) @map("created_at")
 
-  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversation Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   citations    Citation[]
+  feedback     MessageFeedback[]
 
   @@index([conversationId, createdAt])
   @@map("messages")
@@ -434,13 +593,16 @@ model EvaluationResult {
 model UsageEvent {
   id             String    @id
   organizationId String    @map("organization_id")
+  // Attribution to a user (interactive) or null (system/agent) for cost breakdown.
+  userId           String? @map("user_id")
   kind           UsageKind
   model          String
   promptTokens     Int     @default(0) @map("prompt_tokens")
   completionTokens Int     @default(0) @map("completion_tokens")
-  totalTokens      Int     @default(0) @map("total_tokens")
+  // BigInt: aggregate token/cost sums for large tenants exceed the Int ceiling.
+  totalTokens      BigInt  @default(0) @map("total_tokens")
   // Cost in micro-USD (integer) to avoid floating point accumulation error.
-  costMicros       Int     @default(0) @map("cost_micros")
+  costMicros       BigInt  @default(0) @map("cost_micros")
   latencyMs        Int     @default(0) @map("latency_ms")
   metadata         Json    @default("{}")
   createdAt        DateTime @default(now()) @map("created_at")
@@ -477,4 +639,326 @@ model AuditLog {
   @@index([organizationId, action, createdAt])
   @@index([actorUserId])
   @@map("audit_logs")
+}
+
+// --------------------------- Webhooks (outbound) ---------------------------
+
+model WebhookEndpoint {
+  id             String                @id
+  organizationId String                @map("organization_id")
+  url            String
+  description    String?
+  // Envelope-encrypted HMAC signing secret shared with the receiver.
+  secretCiphertext String              @map("secret_ciphertext")
+  // Event types this endpoint subscribes to (e.g. "ingestion.completed").
+  events         String[]              @default([])
+  status         WebhookEndpointStatus @default(ACTIVE)
+  createdById    String?               @map("created_by_id")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  organization Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  deliveries   WebhookDelivery[]
+
+  @@index([organizationId, status])
+  @@map("webhook_endpoints")
+}
+
+model WebhookDelivery {
+  id             String                @id
+  organizationId String                @map("organization_id")
+  endpointId     String                @map("endpoint_id")
+  eventType      String                @map("event_type")
+  payload        Json                  @default("{}")
+  status         WebhookDeliveryStatus @default(PENDING)
+  attempts       Int                   @default(0)
+  responseStatus Int?                  @map("response_status")
+  lastError      String?               @map("last_error")
+  nextAttemptAt  DateTime?             @map("next_attempt_at")
+  deliveredAt    DateTime?             @map("delivered_at")
+  createdAt      DateTime              @default(now()) @map("created_at")
+  updatedAt      DateTime              @updatedAt @map("updated_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  endpoint     WebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, status])
+  @@index([status, nextAttemptAt])
+  @@map("webhook_deliveries")
+}
+
+// ---------------------------- Answer feedback ------------------------------
+
+model MessageFeedback {
+  id             String          @id
+  organizationId String          @map("organization_id")
+  messageId      String          @map("message_id")
+  userId         String          @map("user_id")
+  rating         FeedbackRating
+  reason         FeedbackReason?
+  comment        String?
+  createdAt      DateTime        @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  message      Message      @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // One feedback per user per message (upsert to change one's mind).
+  @@unique([messageId, userId])
+  @@index([organizationId, rating, createdAt])
+  @@map("message_feedback")
+}
+
+// -------------------------- Idempotency records ----------------------------
+
+model IdempotencyKey {
+  id             String            @id
+  organizationId String            @map("organization_id")
+  // Client-supplied Idempotency-Key header value.
+  key            String
+  method         String
+  path           String
+  // SHA-256 of the request body to detect key reuse with a different payload.
+  requestHash    String            @map("request_hash")
+  status         IdempotencyStatus @default(IN_PROGRESS)
+  responseStatus Int?              @map("response_status")
+  responseBody   Json?             @map("response_body")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  expiresAt      DateTime          @map("expires_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, key])
+  @@index([expiresAt])
+  @@map("idempotency_keys")
+}
+
+// ------------------------------ Teams --------------------------------------
+
+model Team {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  name           String
+  slug           String
+  description    String?
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  members      TeamMembership[]
+  collections  Collection[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("teams")
+}
+
+model TeamMembership {
+  id        String   @id
+  teamId    String   @map("team_id")
+  userId    String   @map("user_id")
+  role      Role     @default(MEMBER)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+  @@index([userId])
+  @@map("team_memberships")
+}
+
+// ---------------------------- Collections ----------------------------------
+
+model Collection {
+  id             String               @id
+  organizationId String               @map("organization_id")
+  teamId         String?              @map("team_id")
+  name           String
+  slug           String
+  description    String?
+  visibility     CollectionVisibility @default(ORGANIZATION)
+  createdById    String?              @map("created_by_id")
+  createdAt      DateTime             @default(now()) @map("created_at")
+  updatedAt      DateTime             @updatedAt @map("updated_at")
+
+  organization Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  team         Team?                @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  documents    CollectionDocument[]
+
+  @@unique([organizationId, slug])
+  @@index([organizationId])
+  @@map("collections")
+}
+
+model CollectionDocument {
+  id           String   @id
+  collectionId String   @map("collection_id")
+  documentId   String   @map("document_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  collection Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  document   Document   @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@unique([collectionId, documentId])
+  @@index([documentId])
+  @@map("collection_documents")
+}
+
+// -------------------------- Prompt templates -------------------------------
+
+model PromptTemplate {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  name           String
+  slug           String
+  // Semantic version of this template revision (monotonic per slug).
+  version        Int      @default(1)
+  systemPrompt   String   @map("system_prompt")
+  userPromptTpl  String   @map("user_prompt_tpl")
+  isActive       Boolean  @default(true) @map("is_active")
+  metadata       Json     @default("{}")
+  createdById    String?  @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, slug, version])
+  @@index([organizationId, slug, isActive])
+  @@map("prompt_templates")
+}
+
+// --------------------------- Object storage --------------------------------
+
+model StoredObject {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  // Storage backend key (e.g. "org_xxx/doc_yyy/content.pdf").
+  storageKey     String    @map("storage_key")
+  bucket         String
+  mimeType       String    @map("mime_type")
+  byteSize       BigInt    @default(0) @map("byte_size")
+  contentHash    String    @map("content_hash")
+  // Envelope-encrypted at rest by the storage backend; optional app-level ciphertext.
+  encrypted      Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  deletedAt      DateTime? @map("deleted_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  documents    Document[]
+
+  @@unique([organizationId, storageKey])
+  @@index([organizationId, contentHash])
+  @@map("stored_objects")
+}
+
+// ------------------------------ SSO / SCIM ---------------------------------
+
+model SsoConnection {
+  id             String      @id
+  organizationId String      @map("organization_id")
+  provider       SsoProvider
+  // Display name (e.g. "Okta Production").
+  name           String
+  // Non-secret OIDC/SAML metadata (issuer, clientId, metadataUrl, domains).
+  config         Json        @default("{}")
+  // Envelope-encrypted client secret / signing key material.
+  secretCiphertext String?   @map("secret_ciphertext")
+  enabled        Boolean     @default(true)
+  // Allowed email domains that may authenticate via this connection.
+  allowedDomains String[]    @default([]) @map("allowed_domains")
+  createdAt      DateTime    @default(now()) @map("created_at")
+  updatedAt      DateTime    @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, enabled])
+  @@map("sso_connections")
+}
+
+model ScimToken {
+  id             String    @id
+  organizationId String    @map("organization_id")
+  name           String
+  // SHA-256 of the SCIM bearer token.
+  tokenHash      String    @unique @map("token_hash")
+  prefix         String
+  lastUsedAt     DateTime? @map("last_used_at")
+  expiresAt      DateTime? @map("expires_at")
+  revokedAt      DateTime? @map("revoked_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId])
+  @@map("scim_tokens")
+}
+
+// ------------------------------ Billing ------------------------------------
+
+model Subscription {
+  id             String             @id
+  organizationId String             @unique @map("organization_id")
+  // Plan slug: free | starter | business | enterprise
+  plan           String             @default("starter")
+  status         SubscriptionStatus @default(TRIALING)
+  // Stripe (or other) customer/subscription ids — never card PANs.
+  externalCustomerId     String?    @map("external_customer_id")
+  externalSubscriptionId String?    @map("external_subscription_id")
+  // Entitlement ceilings (0 = unlimited).
+  maxDocuments   Int                @default(1000) @map("max_documents")
+  maxMembers     Int                @default(25) @map("max_members")
+  maxApiKeys     Int                @default(10) @map("max_api_keys")
+  // Monthly spend budget in micro-USD (null = unlimited).
+  monthlyBudgetMicros BigInt?       @map("monthly_budget_micros")
+  currentPeriodStart DateTime       @map("current_period_start")
+  currentPeriodEnd   DateTime       @map("current_period_end")
+  createdAt      DateTime           @default(now()) @map("created_at")
+  updatedAt      DateTime           @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@map("subscriptions")
+}
+
+model BudgetPeriod {
+  id             String   @id
+  organizationId String   @map("organization_id")
+  // YYYY-MM period key.
+  period         String
+  // Soft/hard spend tracking for the period (micro-USD).
+  spentMicros    BigInt   @default(0) @map("spent_micros")
+  budgetMicros   BigInt?  @map("budget_micros")
+  alertedAt      DateTime? @map("alerted_at")
+  hardStoppedAt  DateTime? @map("hard_stopped_at")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, period])
+  @@map("budget_periods")
+}
+
+// --------------------------- MCP tool audit --------------------------------
+
+model ToolInvocation {
+  id             String               @id
+  organizationId String               @map("organization_id")
+  // API key or user that invoked the tool.
+  actorId        String               @map("actor_id")
+  toolName       String               @map("tool_name")
+  sideEffect     ToolSideEffect       @map("side_effect")
+  status         ToolInvocationStatus @default(SUCCEEDED)
+  arguments      Json                 @default("{}")
+  resultSummary  String?              @map("result_summary")
+  latencyMs      Int                  @default(0) @map("latency_ms")
+  error          String?
+  createdAt      DateTime             @default(now()) @map("created_at")
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, toolName, createdAt])
+  @@map("tool_invocations")
 }

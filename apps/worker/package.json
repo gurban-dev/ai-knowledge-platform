@@ -1,0 +1,34 @@
+{
+  "name": "@akp/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node --enable-source-maps dist/main.js",
+    "dev": "tsx watch src/main.ts",
+    "clean": "rm -rf dist *.tsbuildinfo",
+    "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@akp/ai": "workspace:*",
+    "@akp/config": "workspace:*",
+    "@akp/core": "workspace:*",
+    "@akp/db": "workspace:*",
+    "@akp/observability": "workspace:*",
+    "@akp/storage": "workspace:*",
+    "bullmq": "^5.12.0",
+    "ioredis": "^5.4.1"
+  },
+  "devDependencies": {
+    "@akp/eslint-config": "workspace:*",
+    "@akp/tsconfig": "workspace:*",
+    "@types/node": "^20.14.10",
+    "eslint": "^9.10.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5"
+  }
+}

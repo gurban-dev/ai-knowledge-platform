@@ -19,7 +19,7 @@ const logger = createLogger({
 
 async function main(): Promise<void> {
   // Deferred imports so the modules above are loaded post-instrumentation.
-  const [{ buildApp }, { getPrismaClient }, { default: Redis }, { buildContainer }] =
+  const [{ buildApp }, { getPrismaClient }, { Redis }, { buildContainer }] =
     await Promise.all([
       import('./app.js'),
       import('@akp/db'),

@@ -24,6 +24,9 @@ export const loginBodySchema = z.object({
   // Do not apply the complexity regex on login — only registration mints new
   // passwords; login must accept whatever was previously set.
   password: z.string().min(1).max(200),
+  // Optional second factor; required when the account has MFA enabled.
+  mfaToken: z.string().trim().min(6).max(10).optional(),
+  recoveryCode: z.string().trim().min(6).max(20).optional(),
 });
 
 export const refreshBodySchema = z.object({

@@ -3,6 +3,7 @@ import {
   ErrorCode,
   ForbiddenError,
   IdPrefix,
+  MfaRequiredError,
   newId,
   Role,
   UnauthorizedError,
@@ -29,6 +30,14 @@ import {
   type RequestMeta,
 } from './auth.types.js';
 
+/** MFA verification capability injected to keep AuthService decoupled from the MFA module. */
+export interface MfaVerifier {
+  verifyForLogin(
+    user: User,
+    factor: { token?: string | undefined; recoveryCode?: string | undefined },
+  ): Promise<void>;
+}
+
 export interface AuthServiceDeps {
   prisma: PrismaClient;
   users: UserRepository;
@@ -38,6 +47,7 @@ export interface AuthServiceDeps {
   audit: AuditService;
   jwt: JwtService;
   logger: Logger;
+  mfa?: MfaVerifier;
   config: {
     accessTtl: number;
     refreshTtl: number;
@@ -55,6 +65,10 @@ export interface RegisterInput {
 export interface LoginInput {
   email: string;
   password: string;
+  /** TOTP code, required when the account has MFA enabled. */
+  mfaToken?: string | undefined;
+  /** Single-use recovery code, accepted in place of a TOTP code. */
+  recoveryCode?: string | undefined;
 }
 
 /**
@@ -142,6 +156,28 @@ export class AuthService {
     }
 
     const membership = await this.resolveActiveMembership(user.id);
+
+    // Second factor: enforced only after the password is verified so a missing
+    // code cannot be used to probe credentials.
+    if (user.mfaEnabled) {
+      if (!input.mfaToken && !input.recoveryCode) {
+        await this.deps.audit.record({
+          organizationId: membership.organizationId,
+          actorUserId: user.id,
+          action: AuditAction.AuthMfaChallenged,
+          resourceType: 'session',
+          ...meta,
+        });
+        throw new MfaRequiredError();
+      }
+      if (!this.deps.mfa) {
+        throw new UnauthorizedError('MFA verification is unavailable');
+      }
+      await this.deps.mfa.verifyForLogin(user, {
+        token: input.mfaToken,
+        recoveryCode: input.recoveryCode,
+      });
+    }
 
     await this.deps.users.touchLastLogin(user.id);
     const { tokens } = await this.issueSession(user, membership.organization, membership.role, meta);

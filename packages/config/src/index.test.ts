@@ -41,6 +41,8 @@ describe('loadConfig', () => {
         NODE_ENV: 'production',
         JWT_ACCESS_SECRET: 'dev-access-secret-change-me-min-32-chars',
         JWT_REFRESH_SECRET: 'b'.repeat(40),
+        ENCRYPTION_ACTIVE_KEY_ID: 'prod',
+        ENCRYPTION_KEYS: 'prod:dGVzdC1wcm9kLWVuY3J5cHRpb24ta2V5LTEyMzQ1Njc=',
       }),
     ).toThrow(/placeholder/);
   });
@@ -53,7 +55,17 @@ describe('loadConfig', () => {
         NODE_ENV: 'production',
         JWT_ACCESS_SECRET: secret,
         JWT_REFRESH_SECRET: secret,
+        ENCRYPTION_ACTIVE_KEY_ID: 'prod',
+        ENCRYPTION_KEYS: 'prod:dGVzdC1wcm9kLWVuY3J5cHRpb24ta2V5LTEyMzQ1Njc=',
       }),
     ).toThrow(/must differ/);
+  });
+
+  it('exposes storage, retrieval, and queue settings', () => {
+    const config = loadConfig(baseEnv);
+    expect(config.storage.backend).toBe('local');
+    expect(config.ai.retrieval.vectorK).toBe(40);
+    expect(config.queue.prefix).toBe('akp');
+    expect(config.mcp.port).toBe(4100);
   });
 });

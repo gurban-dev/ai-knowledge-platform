@@ -46,6 +46,11 @@ export async function createHarness(): Promise<TestHarness> {
     // unnecessary since ids are app-generated.
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
+        "tool_invocations", "budget_periods", "subscriptions", "scim_tokens",
+        "sso_connections", "stored_objects", "prompt_templates",
+        "collection_documents", "collections", "team_memberships", "teams",
+        "document_acls", "document_versions",
+        "idempotency_keys", "message_feedback", "webhook_deliveries", "webhook_endpoints",
         "audit_logs", "usage_events", "evaluation_results", "evaluations",
         "ingestion_jobs", "citations", "messages", "conversations",
         "document_chunks", "documents", "data_sources", "invites",

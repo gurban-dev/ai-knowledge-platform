@@ -1,4 +1,4 @@
-import type { Organization } from '@akp/db';
+import type { Organization, Prisma } from '@akp/db';
 import { BaseRepository } from '../../lib/repository.js';
 
 export interface CreateOrganizationInput {
@@ -19,6 +19,16 @@ export class OrganizationRepository extends BaseRepository<OrganizationRepositor
   async create(input: CreateOrganizationInput): Promise<Organization> {
     return this.db.organization.create({
       data: { id: input.id, name: input.name, slug: input.slug },
+    });
+  }
+
+  async updateSettings(
+    organizationId: string,
+    settings: Prisma.InputJsonValue,
+  ): Promise<Organization> {
+    return this.db.organization.update({
+      where: { id: organizationId },
+      data: { settings },
     });
   }
 }

@@ -134,6 +134,49 @@ export class QuotaExceededError extends AppError {
   }
 }
 
+export class BudgetExceededError extends AppError {
+  constructor(message = 'Monthly AI spend cap exceeded', details?: unknown) {
+    super(ErrorCode.BUDGET_EXCEEDED, message, 402, { details, expose: true });
+  }
+}
+
+export class InsufficientScopeError extends AppError {
+  constructor(message = 'The credential lacks a required scope', details?: unknown) {
+    super(ErrorCode.INSUFFICIENT_SCOPE, message, 403, { details, expose: true });
+  }
+}
+
+export class FeatureDisabledError extends AppError {
+  constructor(message = 'This feature is disabled for your organization', details?: unknown) {
+    super(ErrorCode.FEATURE_DISABLED, message, 403, { details, expose: true });
+  }
+}
+
+/** MFA is required to complete authentication; carries a short-lived challenge id. */
+export class MfaRequiredError extends AppError {
+  constructor(message = 'Multi-factor authentication required', details?: unknown) {
+    super(ErrorCode.MFA_REQUIRED, message, 401, { details, expose: true });
+  }
+}
+
+export class MfaInvalidError extends AppError {
+  constructor(message = 'Invalid multi-factor authentication code') {
+    super(ErrorCode.MFA_INVALID, message, 401, { expose: true });
+  }
+}
+
+export class IdempotencyConflictError extends AppError {
+  constructor(message = 'Idempotency key reused with a different request') {
+    super(ErrorCode.IDEMPOTENCY_CONFLICT, message, 409, { expose: true });
+  }
+}
+
+export class PromptInjectionError extends AppError {
+  constructor(message = 'Potential prompt injection detected in input', details?: unknown) {
+    super(ErrorCode.PROMPT_INJECTION_DETECTED, message, 422, { details, expose: true });
+  }
+}
+
 export class DependencyFailureError extends AppError {
   constructor(message = 'A downstream dependency failed', cause?: unknown) {
     super(ErrorCode.DEPENDENCY_FAILURE, message, 502, { cause, expose: false });
@@ -149,6 +192,13 @@ export class ServiceUnavailableError extends AppError {
 export class InternalError extends AppError {
   constructor(message = 'An unexpected error occurred', cause?: unknown) {
     super(ErrorCode.INTERNAL_ERROR, message, 500, { cause, expose: false });
+  }
+}
+
+/** Field encryption/decryption failure. Never exposes the underlying reason. */
+export class EncryptionError extends AppError {
+  constructor(message = 'Failed to encrypt or decrypt data', cause?: unknown) {
+    super(ErrorCode.ENCRYPTION_ERROR, message, 500, { cause, expose: false });
   }
 }
 

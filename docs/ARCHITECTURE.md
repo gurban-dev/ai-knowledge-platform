@@ -7,143 +7,74 @@ conventions every contributor is expected to follow.
 
 - **Production-ready, not a prototype.** Every feature ships with UI/API, persistence,
   validation, tests, docs, error handling, logging, and monitoring.
-- **Secure by default.** OWASP-aligned auth, least-privilege RBAC, tenant isolation,
-  input validation and sanitization, secret redaction, full audit trails.
-- **Observable.** Structured logs, metrics, distributed tracing, and health probes are
-  part of the platform, not an afterthought.
-- **Scalable & maintainable.** Stateless API, Redis-backed shared state, feature-based
-  modules, clean boundaries, strict TypeScript.
+- **Secure by default.** OWASP-aligned auth, MFA, least-privilege RBAC, document ACLs,
+  tenant isolation (repository scoping + Postgres RLS), field encryption, prompt-injection
+  guards, PII redaction, full audit trails (append-only).
+- **Observable.** Structured logs, Prometheus metrics (HTTP + AI), distributed tracing,
+  health probes, and SLO definitions.
+- **Scalable & maintainable.** Stateless API, Redis-backed queues/rate limits, feature-based
+  modules, provider failover, plan quotas and spend budgets.
 
 ## High-level topology
 
 ```
           ┌───────────┐        ┌──────────────────┐
-Browser ─▶ │  Next.js  │ ─────▶ │   Fastify  API   │ ─┬─▶ PostgreSQL + pgvector
+Browser ─▶ │  Next.js  │ ─────▶ │   Fastify  API   │ ─┬─▶ PostgreSQL + pgvector (+ RLS)
           │  (web)    │  REST  │  (apps/api)      │  │
-          └───────────┘  /WS   └──────────────────┘  ├─▶ Redis (cache, rate limit, queues)
+          └───────────┘  /SSE  └──────────────────┘  ├─▶ Redis (cache, rate limit, BullMQ)
                                         │             │
-AI agents ─── MCP / API key ────────────┘             └─▶ BullMQ workers (apps/worker)
-                                                            │
-                                              OpenAI / Anthropic, embeddings, rerankers
+AI agents ─── MCP / API key ────────────┤             └─▶ BullMQ workers (apps/worker)
+                                        │                     │
+                                   apps/mcp                   ├─ ingest / embed
+                                                              ├─ webhook delivery
+                                                              └─ retention sweep
+                                              OpenAI / Anthropic / Fake (failover registry)
+                                              Local FS or GCS object storage
 ```
 
-All services emit OpenTelemetry traces and Prometheus metrics; logs are JSON via pino.
+## Packages
 
-## Monorepo & dependency graph
+- `@akp/core` — errors, Result, ids, RBAC, scopes, redaction, encryption, PII, prompt-guard
+- `@akp/config` — Zod-validated env → typed `AppConfig`
+- `@akp/observability` — pino, OTEL preload, Prometheus `AppMetrics`
+- `@akp/db` — Prisma schema/migrations/client, vector helpers
+- `@akp/ai` — providers, registry/failover, chunking, RRF fusion, grounding, prompts, pricing
+- `@akp/storage` — local + GCS object storage adapters
 
-pnpm workspaces + Turborepo. Apps depend on packages; packages depend only on `core`/
-`config`/`tsconfig`. Turbo encodes the build/test/lint task graph (`test` depends on
-`^build`, so workspace packages are compiled before dependents run).
-
-- `@akp/core` — framework-agnostic domain kernel: the error taxonomy (`AppError` +
-  machine-readable `ErrorCode`), `Result`, cursor pagination, prefixed ids, the RBAC role
-  hierarchy, and log redaction. Has no runtime dependency on any framework.
-- `@akp/config` — a single Zod schema validates and coerces all environment variables and
-  produces a typed, namespaced `AppConfig`. **Fail-fast**: misconfiguration crashes at boot
-  with every problem listed, never at 3am in a code path.
-- `@akp/observability` — pino logger factory (with redaction), OpenTelemetry NodeSDK setup,
-  and a Prometheus metrics registry.
-- `@akp/db` — Prisma schema, generated client singleton, hand-written initial migration
-  (including the pgvector HNSW index), and vector (de)serialization helpers.
-
-## API design (`apps/api`)
-
-### Layering
+## API layering
 
 ```
-routes (HTTP + Zod schemas)      thin: validation, status codes, no business logic
-   └─▶ services (use-cases)      business rules, transactions, orchestration
-          └─▶ repositories       the ONLY place that touches Prisma
-                 └─▶ Prisma      persistence
+routes (HTTP + Zod) → services (use-cases) → repositories (Prisma only)
 ```
 
-- **Feature modules** (`modules/auth`, `modules/organizations`, `modules/audit`, …) own
-  their routes, service, repository, and schemas. This keeps related code together and
-  makes the codebase navigable as it grows to dozens of features.
-- **Dependency injection** via a single composition root (`container.ts`). Nothing else
-  constructs services or repositories, so the entire object graph is explicit and trivially
-  swappable in tests.
-- **Repository pattern** isolates persistence. `BaseRepository.withTx(tx)` rebinds a
-  repository to a Prisma transaction so a service can compose multiple repositories inside
-  one atomic `$transaction` (e.g. registration creates org + user + membership atomically).
+Composition root: `apps/api/src/container.ts`.
 
-### Validation & OpenAPI
+## AuthN / AuthZ
 
-Zod is the single source of truth. `fastify-type-provider-zod` uses the same schemas for
-runtime request validation, response serialization, **and** OpenAPI generation
-(`/docs`), so documentation cannot drift from behavior.
+- Passwords: Argon2id
+- Access JWT (15m) + opaque refresh with rotation + reuse detection
+- MFA (TOTP, encrypted secret, recovery codes)
+- API keys: hashed, scoped, optional IP allowlist + per-key rate limit
+- Document ACLs at retrieval time (USER/TEAM/ROLE subjects)
+- Postgres RLS via `SET LOCAL app.current_org_id`
 
-### Error handling
+## RAG pipeline
 
-All errors funnel through one error boundary (`plugins/error-handler.ts`) which normalizes
-domain errors, Zod validation failures, and framework errors into a stable envelope:
+1. Embed query
+2. Hybrid retrieve (pgvector ANN + trigram) → Reciprocal Rank Fusion
+3. Filter by document ACL
+4. Cross-encoder/lexical rerank
+5. Grounding check + abstention threshold
+6. Prompt-injection scan on user question
+7. Generate with versioned prompt; store citations + provenance metadata
 
-```json
-{ "error": { "code": "VALIDATION_ERROR", "message": "...", "statusCode": 422, "requestId": "req_..." } }
-```
+## Multi-tenancy & billing
 
-5xx errors are logged with full context and their messages masked; 4xx errors are returned
-as-is. Every response carries an `x-request-id` for support correlation.
+Shared schema + `organizationId`. Entitlements via `subscriptions` (docs/members/keys).
+Monthly spend tracked in `budget_periods` with hard-stop enforcement.
 
-### Cross-cutting plugins
+## Testing
 
-`container` → `error-handler` → `request-context` → `security` (Helmet + strict CORS) →
-`auth` → `rate-limit` (Redis-backed) → `swagger` → `metrics`. `fastify-plugin` metadata
-enforces inter-plugin dependencies.
-
-## Authentication & authorization
-
-- **Passwords:** Argon2id (memory-hard). Never logged or returned.
-- **Access tokens:** short-lived (15 min) stateless HS256 JWTs carrying `sub`, `org`,
-  `role`, `sid`. Verified without a DB round-trip.
-- **Refresh tokens:** opaque, high-entropy, **hashed at rest** (SHA-256), single-use with
-  rotation. Presenting an already-rotated (revoked) refresh token triggers **reuse
-  detection**, which revokes the entire session family — the standard OWASP mitigation for
-  stolen refresh tokens.
-- **RBAC:** a hierarchical role model (`OWNER > ADMIN > MEMBER > VIEWER`) lives in `@akp/core`;
-  `fastify.requireRole(role)` enforces "at least this role" as a preHandler.
-- **API keys:** organization-scoped, hashed at rest, for programmatic + MCP access (Phase 7).
-
-## Multi-tenancy
-
-Shared-schema isolation: every tenant-scoped table carries `organizationId` (indexed), and
-the repository layer is responsible for scoping every query to the caller's organization.
-This favors operational simplicity over schema-per-tenant while keeping strong isolation,
-provided query scoping is disciplined (hence centralized in repositories).
-
-## Data model highlights
-
-- Application-generated, prefixed ids (`org_`, `usr_`, `doc_`…) — self-describing in logs,
-  no cross-type mixups, no dependence on DB sequences.
-- `document_chunks.embedding vector(1536)` with an **HNSW** cosine index for ANN search and
-  a **GIN trigram** index on content for the lexical half of hybrid retrieval.
-- `sessions` model refresh-token lineage (`replacedById`) for reuse detection.
-- `usage_events` store cost in **integer micro-USD** to avoid floating-point drift when
-  aggregating spend.
-- `audit_logs` capture actor, action, resource, IP/UA, and structured metadata.
-
-## Observability
-
-- **Logs:** pino JSON with automatic redaction of credential-bearing fields; per-request
-  child loggers keyed by `requestId`.
-- **Metrics:** Prometheus at `/metrics` — request duration histogram + counter labeled by
-  method, **route template** (not raw path, to bound cardinality), and status; plus default
-  Node process metrics.
-- **Tracing:** OpenTelemetry auto-instrumentation (http, pg, ioredis, fastify). Initialized
-  in a preload before instrumented modules load; exports OTLP when enabled.
-- **Health:** `/health/live` (never fails on dependencies — for k8s liveness) and
-  `/health/ready` (checks Postgres + Redis — gates traffic).
-
-## Testing strategy
-
-- **Unit tests** (Vitest) for pure logic and services with mocked repositories — fast, no I/O.
-- **Integration tests** drive the real Fastify app via `inject()` against a real Postgres +
-  Redis, resetting state between tests. They self-skip without `TEST_DATABASE_URL`.
-- **Contract/E2E** (Playwright for web) arrive with their respective phases.
-
-## Conventions
-
-- Strict TypeScript (`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`, …).
-- Small, composable functions; composition over inheritance.
-- Comments explain **intent/trade-offs**, never restate the code.
-- Public APIs are documented; every feature is validated, tested, logged, and monitored.
+- Unit: Vitest (services, ACL, crypto, AI helpers)
+- Integration: Fastify `inject()` + real Postgres/Redis
+- Web E2E: Playwright smoke
