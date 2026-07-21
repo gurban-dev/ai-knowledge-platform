@@ -1,15 +1,17 @@
-import baseConfig from '@akp/eslint-config';
+import baseConfig from "@akp/eslint-config";
 
 export default [
   ...baseConfig,
   {
-    ignores: ['prisma/generated/**', 'prisma/seed.ts'],
-  },
-  {
     languageOptions: {
       parserOptions: {
-        projectService: true,
         tsconfigRootDir: import.meta.dirname,
+        projectService: {
+          allowDefaultProject: [
+            "eslint.config.js",
+            "vitest.config.ts",
+          ],
+        },
       },
     },
   },

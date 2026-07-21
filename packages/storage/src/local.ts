@@ -46,11 +46,20 @@ export class LocalObjectStorage implements ObjectStorage {
     }
   }
 
-  async signedUrl(organizationId: string, key: string, ttlSeconds: number): Promise<string> {
-    // Local backend: return a pseudo URL encoding org/key + expiry.
+  signedUrl(
+    organizationId: string,
+    key: string,
+    ttlSeconds: number,
+  ): Promise<string> {
     const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-    const sig = createHash('sha256').update(`${organizationId}:${key}:${exp}`).digest('hex').slice(0, 16);
-    return `local://${this.bucket}/${organizationId}/${key}?exp=${exp}&sig=${sig}`;
+    const sig = createHash('sha256')
+      .update(`${organizationId}:${key}:${exp}`)
+      .digest('hex')
+      .slice(0, 16);
+  
+    return Promise.resolve(
+      `local://${this.bucket}/${organizationId}/${key}?exp=${exp}&sig=${sig}`,
+    );
   }
 
   private resolve(organizationId: string, key: string): string {

@@ -53,14 +53,17 @@ export class GcsObjectStorage implements ObjectStorage {
     }
   }
 
-  async signedUrl(organizationId: string, key: string, ttlSeconds: number): Promise<string> {
-    // Without a service-account private key we cannot mint V4 signed URLs.
-    // Return a short-lived media URL that still requires the bearer token —
-    // callers in production should terminate signed-URL generation at a
-    // dedicated signing service. For API-internal use, prefer `get()`.
+  signedUrl(
+    organizationId: string,
+    key: string,
+    ttlSeconds: number,
+  ): Promise<string> {
     const objectName = `${organizationId}/${key}`;
     const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-    return `https://storage.googleapis.com/storage/v1/b/${this.bucket}/o/${encodeURIComponent(objectName)}?alt=media&akp_exp=${exp}`;
+  
+    return Promise.resolve(
+      `https://storage.googleapis.com/storage/v1/b/${this.bucket}/o/${encodeURIComponent(objectName)}?alt=media&akp_exp=${exp}`,
+    );
   }
 
   private async request(url: string, init: RequestInit): Promise<Response> {

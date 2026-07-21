@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: 22
+  NODE_VERSION: 24
 
 jobs:
   quality:
@@ -99,9 +99,15 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Enable pgvector extension
-        run: psql "$DATABASE_URL" -c "CREATE EXTENSION IF NOT EXISTS vector; CREATE EXTENSION IF NOT EXISTS pg_trgm;"
         env:
+          PGHOST: localhost
+          PGPORT: 5432
+          PGUSER: akp
           PGPASSWORD: akp_dev_password
+          PGDATABASE: akp_test
+        run: |
+          psql -c "CREATE EXTENSION IF NOT EXISTS vector;"
+          psql -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
 
       - name: Apply migrations
         run: pnpm db:deploy

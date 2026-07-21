@@ -1,6 +1,11 @@
 packages:
   - "apps/*"
   - "packages/*"
+
+peerDependencyRules:
+  allowedVersions:
+    typescript: "5"
+
 allowBuilds:
   '@prisma/client': true
   '@prisma/engines': true

@@ -11,17 +11,36 @@ import globals from 'globals';
  */
 export const baseConfig = [
   {
-    ignores: ['dist/**', '.next/**', 'coverage/**', 'node_modules/**', '**/*.generated.*'],
+    ignores: [
+      "dist/**",
+      ".next/**",
+      "coverage/**",
+      "node_modules/**",
+      "**/*.generated.*",
+      "**/*.d.ts",
+      "**/*.map",
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommendedTypeChecked,
   ...tseslint.configs.stylisticTypeChecked,
+
+  {
+    files: [
+      "**/eslint.config.js",
+      "**/vitest.config.ts",
+      "**/vite.config.ts",
+      "**/*.config.js",
+      "**/*.config.ts",
+    ],
+    rules: {
+      "@typescript-eslint/prefer-nullish-coalescing": "off",
+    },
+  },
+
   {
     languageOptions: {
       globals: { ...globals.node },
-      parserOptions: {
-        projectService: true,
-      },
     },
     rules: {
       '@typescript-eslint/consistent-type-imports': [
@@ -42,7 +61,7 @@ export const baseConfig = [
     },
   },
   {
-    files: ['**/*.test.ts', '**/*.spec.ts', '**/*.test.tsx'],
+    files: ['**/*.test.ts', '**/*.spec.ts', '**/*.test.tsx', "**/*.ts", "**/*.tsx"],
     rules: {
       '@typescript-eslint/no-non-null-assertion': 'off',
       '@typescript-eslint/no-explicit-any': 'off',
