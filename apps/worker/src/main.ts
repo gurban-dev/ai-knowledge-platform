@@ -76,7 +76,11 @@ async function main(): Promise<void> {
         },
       );
     },
-    { connection, concurrency: config.queue.ingestConcurrency },
+    {
+      connection,
+      prefix: config.queue.prefix,
+      concurrency: config.queue.ingestConcurrency,
+    },
   );
 
   const webhookWorker = new Worker(
@@ -85,7 +89,11 @@ async function main(): Promise<void> {
       const data = job.data as { deliveryId: string };
       await deliverWebhook(prisma, encryptor, data.deliveryId, config.webhooks.timeoutMs);
     },
-    { connection, concurrency: config.queue.webhookConcurrency },
+    {
+      connection,
+      prefix: config.queue.prefix,
+      concurrency: config.queue.webhookConcurrency,
+    },
   );
 
   const maintenanceWorker = new Worker(
@@ -99,7 +107,11 @@ async function main(): Promise<void> {
         logger.info({ deleted: deleted.count }, 'Retention sweep completed');
       }
     },
-    { connection, concurrency: 1 },
+    {
+      connection,
+      prefix: config.queue.prefix,
+      concurrency: 1,
+    },
   );
 
   const shutdown = async (signal: string) => {

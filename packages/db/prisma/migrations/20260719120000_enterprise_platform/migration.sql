@@ -258,14 +258,33 @@ DECLARE
   tbl text;
 BEGIN
   FOREACH tbl IN ARRAY ARRAY[
-    'documents', 'document_chunks', 'document_acls', 'document_versions',
-    'data_sources', 'conversations', 'messages', 'citations',
-    'ingestion_jobs', 'evaluations', 'evaluation_results', 'usage_events',
-    'audit_logs', 'api_keys', 'invites', 'memberships',
-    'webhook_endpoints', 'webhook_deliveries', 'message_feedback',
-    'idempotency_keys', 'teams', 'collections', 'prompt_templates',
-    'stored_objects', 'sso_connections', 'scim_tokens', 'subscriptions',
-    'budget_periods', 'tool_invocations'
+    'documents',
+    'document_chunks',
+    'document_acls',
+    'document_versions',
+    'data_sources',
+    'conversations',
+    'messages',
+    'ingestion_jobs',
+    'evaluations',
+    'usage_events',
+    'audit_logs',
+    'api_keys',
+    'invites',
+    'memberships',
+    'webhook_endpoints',
+    'webhook_deliveries',
+    'message_feedback',
+    'idempotency_keys',
+    'teams',
+    'collections',
+    'prompt_templates',
+    'stored_objects',
+    'sso_connections',
+    'scim_tokens',
+    'subscriptions',
+    'budget_periods',
+    'tool_invocations'
   ]
   LOOP
     EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', tbl);
@@ -279,11 +298,3 @@ BEGIN
     );
   END LOOP;
 END $$;
-
--- evaluation_results and citations/messages don't always carry organization_id
--- directly — evaluation_results is scoped via evaluation; citations via message.
--- Drop incorrect policies if the loop applied to tables without organization_id.
-DROP POLICY IF EXISTS evaluation_results_tenant_isolation ON evaluation_results;
-DROP POLICY IF EXISTS citations_tenant_isolation ON citations;
-ALTER TABLE evaluation_results DISABLE ROW LEVEL SECURITY;
-ALTER TABLE citations DISABLE ROW LEVEL SECURITY;

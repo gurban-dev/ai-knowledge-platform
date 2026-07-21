@@ -27,8 +27,8 @@ export interface QueueJobPayloads {
   };
 }
 
-export function queueKey(prefix: string, name: QueueName): string {
-  return `${prefix}:${name}`;
+export function queueKey(_prefix: string, name: string): string {
+  return name;
 }
 
 /** Parse redis://host:port/db into BullMQ connection options. */
@@ -52,9 +52,21 @@ export function createQueues(
   maintenance: Queue<QueueJobPayloads[typeof QueueName.Maintenance]>;
 } {
   const connection = redisUrlToConnection(redisUrl);
+
+  const ingest = new Queue(queueKey(prefix, QueueName.Ingest), {
+    connection,
+    prefix,
+  });
+
   return {
-    ingest: new Queue(queueKey(prefix, QueueName.Ingest), { connection }),
-    webhook: new Queue(queueKey(prefix, QueueName.Webhook), { connection }),
-    maintenance: new Queue(queueKey(prefix, QueueName.Maintenance), { connection }),
+    ingest,
+    webhook: new Queue(queueKey(prefix, QueueName.Webhook), {
+      connection,
+      prefix,
+    }),
+    maintenance: new Queue(queueKey(prefix, QueueName.Maintenance), {
+      connection,
+      prefix,
+    }),
   };
 }

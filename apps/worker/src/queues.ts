@@ -6,8 +6,8 @@ export const QueueName = {
   Maintenance: 'maintenance',
 } as const;
 
-export function queueKey(prefix: string, name: string): string {
-  return `${prefix}:${name}`;
+export function queueKey(_prefix: string, name: string): string {
+  return name;
 }
 
 export function redisUrlToConnection(url: string): ConnectionOptions {
