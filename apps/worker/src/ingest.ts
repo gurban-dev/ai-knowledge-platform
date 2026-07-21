@@ -29,7 +29,7 @@ export async function ingestDocument(
   const document = await deps.prisma.document.findFirst({
     where: { id: job.documentId, organizationId: job.organizationId },
   });
-  if (!document || !document.sourceUri) {
+  if (!document?.sourceUri) {
     throw new Error(`Document ${job.documentId} not found or missing source`);
   }
 

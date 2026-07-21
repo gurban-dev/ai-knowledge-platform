@@ -15,7 +15,7 @@ function parsePiiSetting(raw: unknown): boolean {
   return true;
 }
 
-async function main(): Promise<void> {
+function main(): void {
   const config = getConfig();
   const logger = createLogger({
     serviceName: 'akp-worker',
@@ -126,7 +126,4 @@ async function main(): Promise<void> {
   logger.info('AKP worker started');
 }
 
-main().catch((error) => {
-  console.error(error);
-  process.exit(1);
-});
+main();
