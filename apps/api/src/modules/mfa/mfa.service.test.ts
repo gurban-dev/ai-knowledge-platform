@@ -26,7 +26,7 @@ function makeUser(overrides: Partial<User> = {}): User {
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
-  } as User;
+  };
 }
 
 function makeDeps() {

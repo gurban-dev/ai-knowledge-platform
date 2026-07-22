@@ -7,7 +7,12 @@ import type { Redis } from 'ioredis';
 import type { Queue } from 'bullmq';
 import type { AppConfig } from './config.js';
 import { JwtService } from './lib/jwt.js';
-import { createQueues, type QueueJobPayloads, QueueName } from './lib/queues.js';
+import { createQueues } from './lib/queues.js';
+import type {
+  IngestJobPayload,
+  MaintenanceJobPayload,
+  WebhookJobPayload,
+} from './lib/queues.js';
 import { MfaService } from './modules/mfa/mfa.service.js';
 import { UserRepository } from './modules/users/user.repository.js';
 import { OrganizationRepository } from './modules/organizations/organization.repository.js';
@@ -43,9 +48,9 @@ export interface AppContainer {
   ai: AiProvider;
   storage: ObjectStorage;
   queues: {
-    ingest: Queue<QueueJobPayloads[typeof QueueName.Ingest]>;
-    webhook: Queue<QueueJobPayloads[typeof QueueName.Webhook]>;
-    maintenance: Queue<QueueJobPayloads[typeof QueueName.Maintenance]>;
+    ingest: Queue<IngestJobPayload>;
+    webhook: Queue<WebhookJobPayload>;
+    maintenance: Queue<MaintenanceJobPayload>;
   };
   resolveTeamIds: (organizationId: string, userId: string) => Promise<string[]>;
   repositories: {

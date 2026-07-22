@@ -34,7 +34,7 @@ export const inviteRoutes: FastifyPluginAsync = async (app) => {
       const { invite, token } = await fastify.container.services.invites.create({
         organizationId: request.auth!.organizationId,
         email: request.body.email,
-        role: request.body.role as Role,
+        role: request.body.role,
         invitedById: request.auth!.userId,
       });
       return reply.status(201).send({

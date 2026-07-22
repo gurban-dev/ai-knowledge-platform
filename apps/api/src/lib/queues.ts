@@ -27,6 +27,12 @@ export interface QueueJobPayloads {
   };
 }
 
+export type IngestJobPayload = QueueJobPayloads[typeof QueueName.Ingest];
+
+export type WebhookJobPayload = QueueJobPayloads[typeof QueueName.Webhook];
+
+export type MaintenanceJobPayload = QueueJobPayloads[typeof QueueName.Maintenance];
+
 export function queueKey(_prefix: string, name: string): string {
   return name;
 }
@@ -34,6 +40,7 @@ export function queueKey(_prefix: string, name: string): string {
 /** Parse redis://host:port/db into BullMQ connection options. */
 export function redisUrlToConnection(url: string): ConnectionOptions {
   const parsed = new URL(url);
+
   return {
     host: parsed.hostname || '127.0.0.1',
     port: parsed.port ? Number(parsed.port) : 6379,
@@ -53,20 +60,33 @@ export function createQueues(
 } {
   const connection = redisUrlToConnection(redisUrl);
 
-  const ingest = new Queue(queueKey(prefix, QueueName.Ingest), {
-    connection,
-    prefix,
-  });
+  const ingest = new Queue<QueueJobPayloads[typeof QueueName.Ingest]>(
+    queueKey(prefix, QueueName.Ingest),
+    {
+      connection,
+      prefix,
+    },
+  );
+
+  const webhook = new Queue<QueueJobPayloads[typeof QueueName.Webhook]>(
+    queueKey(prefix, QueueName.Webhook),
+    {
+      connection,
+      prefix,
+    },
+  );
+
+  const maintenance = new Queue<QueueJobPayloads[typeof QueueName.Maintenance]>(
+    queueKey(prefix, QueueName.Maintenance),
+    {
+      connection,
+      prefix,
+    },
+  );
 
   return {
     ingest,
-    webhook: new Queue(queueKey(prefix, QueueName.Webhook), {
-      connection,
-      prefix,
-    }),
-    maintenance: new Queue(queueKey(prefix, QueueName.Maintenance), {
-      connection,
-      prefix,
-    }),
+    webhook,
+    maintenance,
   };
 }

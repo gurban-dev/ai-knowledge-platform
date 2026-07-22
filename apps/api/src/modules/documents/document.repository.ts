@@ -5,7 +5,7 @@ import type {
   DocumentAcl,
   DocumentStatus,
 } from '@akp/db';
-import { Prisma } from '@akp/db';
+import { type Prisma } from '@akp/db';
 import { BaseRepository } from '../../lib/repository.js';
 
 export interface CreateDocumentData {
@@ -107,12 +107,12 @@ export class DocumentRepository extends BaseRepository<DocumentRepository> {
   async replaceAcls(
     organizationId: string,
     documentId: string,
-    entries: Array<{
+    entries: {
       id: string;
       subjectType: AclSubjectType;
       subjectId: string;
       permission: AclPermission;
-    }>,
+    }[],
   ): Promise<DocumentAcl[]> {
     await this.db.documentAcl.deleteMany({ where: { documentId, organizationId } });
     if (entries.length === 0) return [];

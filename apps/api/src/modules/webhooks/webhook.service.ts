@@ -4,7 +4,7 @@ import type { FieldEncryptor } from '@akp/core';
 import type { Prisma, PrismaClient, WebhookEndpoint } from '@akp/db';
 import type { Queue } from 'bullmq';
 import type { QueueJobPayloads } from '../../lib/queues.js';
-import { QueueName } from '../../lib/queues.js';
+import { type QueueName } from '../../lib/queues.js';
 import type { AuditService } from '../audit/audit.service.js';
 import { AuditAction } from '../audit/audit.service.js';
 
@@ -123,7 +123,7 @@ export class WebhookService {
       where: { id: deliveryId },
       include: { endpoint: true },
     });
-    if (!delivery || !delivery.endpoint) return;
+    if (!delivery?.endpoint) return;
     const secret = this.deps.encryptor.decrypt(delivery.endpoint.secretCiphertext);
     const body = JSON.stringify({
       id: delivery.id,

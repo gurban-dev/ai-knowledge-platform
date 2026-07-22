@@ -242,8 +242,7 @@ export class ChatService {
         },
       });
       if (!abstained) {
-        for (let i = 0; i < hits.length; i++) {
-          const hit = hits[i]!;
+        for (const hit of hits) {
           await tx.citation.create({
             data: {
               id: newId(IdPrefix.citation),

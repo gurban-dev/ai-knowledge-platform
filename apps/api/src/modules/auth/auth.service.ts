@@ -150,7 +150,7 @@ export class AuthService {
       ? await verifyPassword(user.passwordHash, input.password)
       : await this.dummyVerify(input.password);
 
-    if (!user || !user.passwordHash || !passwordOk) {
+    if (!user?.passwordHash || !passwordOk) {
       this.deps.logger.warn({ email: input.email }, 'Login failed: invalid credentials');
       throw new InvalidCredentialsError();
     }

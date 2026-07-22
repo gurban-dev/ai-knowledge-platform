@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
+import type { Redis as RedisClient } from 'ioredis';
 import { loadConfig } from '@akp/config';
 import { createPrismaClient, type PrismaClient } from '@akp/db';
 import { createLogger } from '@akp/observability';
@@ -12,7 +13,7 @@ export const INTEGRATION_ENABLED = Boolean(process.env.TEST_DATABASE_URL);
 export interface TestHarness {
   app: FastifyInstance;
   prisma: PrismaClient;
-  redis: Redis;
+  redis: RedisClient;
   reset: () => Promise<void>;
   close: () => Promise<void>;
 }

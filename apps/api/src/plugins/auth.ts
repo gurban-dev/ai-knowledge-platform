@@ -40,7 +40,7 @@ function extractApiKey(request: FastifyRequest): string | null {
   const headerKey = request.headers['x-api-key'];
   if (typeof headerKey === 'string' && headerKey.trim()) return headerKey.trim();
   const bearer = extractBearer(request);
-  if (bearer && bearer.startsWith('akp_')) return bearer;
+  if (bearer?.startsWith('akp_')) return bearer;
   return null;
 }
 

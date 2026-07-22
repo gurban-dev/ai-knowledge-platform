@@ -24,7 +24,7 @@ function makeKey(overrides: Partial<ApiKey> = {}): ApiKey {
     revokedAt: null,
     createdAt: new Date(),
     ...overrides,
-  } as ApiKey;
+  };
 }
 
 function makeRepo() {

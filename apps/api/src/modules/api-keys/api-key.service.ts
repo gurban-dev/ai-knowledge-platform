@@ -144,15 +144,21 @@ export class ApiKeyService {
       throw new UnauthorizedError('Malformed API key');
     }
     const record = await this.repository.findByHash(hashSecret(rawSecret));
-    if (!record || record.status !== 'ACTIVE') {
+    
+    if (record?.status !== 'ACTIVE') {
       throw new UnauthorizedError('Invalid API key');
     }
-    if (record.expiresAt && record.expiresAt.getTime() <= Date.now()) {
+    
+    const expiresAt = record.expiresAt?.getTime();
+
+    if (expiresAt !== undefined && expiresAt <= Date.now()) {
       throw new UnauthorizedError('API key expired');
     }
+    
     if (!ipMatchesAllowlist(context.ip, record.ipAllowlist)) {
       throw new ForbiddenError('Source IP is not permitted for this API key');
     }
+
     // Fire-and-forget; a telemetry write must never fail authentication.
     void this.repository.touchLastUsed(record.id).catch((error) => {
       this.logger.warn({ err: error, keyId: record.id }, 'Failed to record API key usage');

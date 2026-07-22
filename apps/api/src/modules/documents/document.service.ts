@@ -14,7 +14,7 @@ import type { Document, PrismaClient } from '@akp/db';
 import type { Logger } from '@akp/observability';
 import type { Queue } from 'bullmq';
 import type { QueueJobPayloads } from '../../lib/queues.js';
-import { QueueName } from '../../lib/queues.js';
+import { type QueueName } from '../../lib/queues.js';
 import type { AuditService } from '../audit/audit.service.js';
 import { AuditAction } from '../audit/audit.service.js';
 import type { OrganizationService } from '../organizations/organization.service.js';
@@ -210,7 +210,7 @@ export class DocumentService {
     organizationId: string,
     documentId: string,
     principal: AclPrincipal,
-    entries: Array<{ subjectType: 'USER' | 'TEAM' | 'ROLE'; subjectId: string; permission: 'READ' | 'WRITE' | 'ADMIN' }>,
+    entries: { subjectType: 'USER' | 'TEAM' | 'ROLE'; subjectId: string; permission: 'READ' | 'WRITE' | 'ADMIN' }[],
   ) {
     await this.get(organizationId, documentId, principal);
     if (!roleSatisfiesAdmin(principal.role)) {

@@ -2,7 +2,7 @@ import type { FastifyPluginAsync } from 'fastify';
 import fp from 'fastify-plugin';
 import { ZodError } from 'zod';
 import {
-  AppError,
+  type AppError,
   NotFoundError,
   RateLimitError,
   toAppError,
@@ -49,7 +49,7 @@ const errorHandlerPlugin: FastifyPluginAsync = async (fastify) => {
 function extractZodError(error: unknown): ZodError | null {
   if (error instanceof ZodError) return error;
   if (typeof error === 'object' && error !== null && 'validation' in error) {
-    const validation = (error as { validation: unknown }).validation;
+    const validation = (error).validation;
     if (validation instanceof ZodError) return validation;
   }
   return null;
@@ -68,7 +68,7 @@ function normalize(error: unknown): AppError {
 
   // Fastify framework errors carry a statusCode and code we can map cleanly.
   if (typeof error === 'object' && error !== null && 'statusCode' in error) {
-    const status = Number((error as { statusCode: unknown }).statusCode);
+    const status = Number((error).statusCode);
     if (status === 429) return new RateLimitError();
     if (status === 400) {
       const message = (error as { message?: unknown }).message;

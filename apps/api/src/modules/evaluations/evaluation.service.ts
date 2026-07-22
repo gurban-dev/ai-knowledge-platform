@@ -108,7 +108,7 @@ export class EvaluationService {
         question: sample.question,
         expected: sample.expected ?? null,
         answer: sample.answer,
-        scores: sample.scores as unknown as Prisma.InputJsonValue,
+        scores: sample.scores,
         hallucinated: sample.hallucinated ?? false,
       })),
       finishedAt,

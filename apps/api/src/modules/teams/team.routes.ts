@@ -102,7 +102,7 @@ export const teamRoutes: FastifyPluginAsync = async (app) => {
         request.auth!.organizationId,
         request.params.id,
         request.body.userId,
-        request.body.role as Role,
+        request.body.role,
       );
       return reply.status(201).send({
         id: member.id,

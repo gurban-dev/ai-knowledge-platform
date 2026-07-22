@@ -147,7 +147,7 @@ export const apiKeyRoutes: FastifyPluginAsync = async (app) => {
         response: { 200: currentApiKeySchema, ...commonErrorResponses },
       },
     },
-    async (request) => {
+    (request) => {
       const key = request.apiKey!;
       return {
         id: key.id,

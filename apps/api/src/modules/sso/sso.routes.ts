@@ -125,7 +125,7 @@ export const ssoRoutes: FastifyPluginAsync = async (app) => {
       const connection = await fastify.container.prisma.ssoConnection.findUnique({
         where: { id: request.params.connectionId },
       });
-      if (!connection || !connection.enabled) throw new NotFoundError('SSO connection');
+      if (!connection?.enabled) throw new NotFoundError('SSO connection');
       const cfg = connection.config as { issuer?: string; clientId?: string; authorizeUrl?: string };
       const state = newId(IdPrefix.session);
       const authorizeUrl =

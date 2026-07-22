@@ -62,7 +62,7 @@ const idempotencyPlugin: FastifyPluginAsync = async (fastify) => {
         })
         .catch(() => undefined);
       return originalSend(payload);
-    }) as typeof reply.send;
+    });
   });
 };
 
