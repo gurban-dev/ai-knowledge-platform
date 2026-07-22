@@ -21,6 +21,7 @@
     "clean": "rm -rf dist *.tsbuildinfo",
     "lint": "eslint .",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck:seed": "tsc -p tsconfig.seed.json",
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",

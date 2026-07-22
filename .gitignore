@@ -42,6 +42,7 @@ Thumbs.db
 
 # Prisma
 packages/db/prisma/*.db
+packages/db/prisma/seed.js
 
 # Terraform
 *.tfstate
