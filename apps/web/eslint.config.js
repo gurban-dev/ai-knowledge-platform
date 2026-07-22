@@ -20,7 +20,6 @@ export default [
               'eslint.config.js',
               'next.config.mjs',
               'postcss.config.mjs',
-              'vitest.config.ts',
             ],
           },
         },
