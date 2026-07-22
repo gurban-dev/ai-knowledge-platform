@@ -33,9 +33,8 @@ export function createPrismaClient(options: PrismaClientOptions = {}): PrismaCli
 const globalForPrisma = globalThis as unknown as { __akpPrisma?: PrismaClient };
 
 export function getPrismaClient(options: PrismaClientOptions = {}): PrismaClient {
-  if (!globalForPrisma.__akpPrisma) {
-    globalForPrisma.__akpPrisma = createPrismaClient(options);
-  }
+  globalForPrisma.__akpPrisma ??= createPrismaClient(options);
+
   return globalForPrisma.__akpPrisma;
 }
 
