@@ -26,7 +26,9 @@ describe('redact', () => {
   it('guards against circular references', () => {
     const obj: Record<string, unknown> = { name: 'x' };
     obj.self = obj;
-    const result = redact(obj) as Record<string, unknown>;
+  
+    const result = redact(obj);
+    
     expect(result.name).toBe('x');
     expect(result.self).toBe('[Circular]');
   });

@@ -25,8 +25,8 @@ export const ApiScope = {
 export type ApiScope = (typeof ApiScope)[keyof typeof ApiScope];
 
 export const ALL_API_SCOPES: readonly ApiScope[] = Object.values(ApiScope).filter(
-  (s) => s !== ApiScope.Wildcard,
-) as ApiScope[];
+  (s): s is ApiScope => s !== ApiScope.Wildcard,
+);
 
 /** True if `granted` covers `required` (wildcard covers everything). */
 export function scopeSatisfies(granted: readonly string[], required: string): boolean {

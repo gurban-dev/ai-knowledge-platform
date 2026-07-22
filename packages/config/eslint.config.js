@@ -1,4 +1,4 @@
-import baseConfig from "@akp/eslint-config";
+import baseConfig from '@akp/eslint-config';
 
 export default [
   ...baseConfig,
@@ -10,10 +10,20 @@ export default [
           allowDefaultProject: [
             'eslint.config.js',
             'vitest.config.ts',
-            '**/*.test.ts',
           ],
         },
       },
+    },
+  },
+  {
+    files: [
+      '**/*.test.ts',
+      '**/*.config.ts',
+      '**/eslint.config.js',
+      '**/vitest.config.ts',
+    ],
+    rules: {
+      '@typescript-eslint/prefer-nullish-coalescing': 'off',
     },
   },
 ];
