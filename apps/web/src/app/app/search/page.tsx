@@ -5,7 +5,7 @@ import { useState } from 'react';
 export default function SearchPage() {
   const [query, setQuery] = useState('');
   const [hits, setHits] = useState<
-    Array<{ title: string; content: string; score: number }>
+    { title: string; content: string; score: number }[]
   >([]);
 
   async function runSearch() {

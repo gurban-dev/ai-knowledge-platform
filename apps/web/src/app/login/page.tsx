@@ -38,7 +38,11 @@ export default function LoginPage() {
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
       <h1 className="font-display text-4xl">Sign in</h1>
       <p className="mt-2 text-sm text-ink/70">Access your organization workspace.</p>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4" noValidate>
+      <form
+        onSubmit={(event) => void onSubmit(event)}
+        className="mt-8 space-y-4"
+        noValidate
+      >
         <label className="block text-sm font-medium">
           Email
           <input

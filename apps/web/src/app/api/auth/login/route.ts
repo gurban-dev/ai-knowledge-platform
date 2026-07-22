@@ -2,18 +2,44 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { API_URL } from '@/lib/api';
 
+type LoginResponse =
+  | {
+      tokens: {
+        accessToken: string;
+        refreshToken: string;
+      };
+    }
+  | {
+      error?: {
+        message?: string;
+      };
+    };
+
 export async function POST(request: Request) {
-  const body = await request.json();
+  const body = (await request.json()) as {
+    email: string;
+    password: string;
+  };
+
   const res = await fetch(`${API_URL}/v1/auth/login`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const data = await res.json().catch(() => ({}));
+
+  const data = (await res.json().catch(() => ({}))) as LoginResponse;
+
   if (!res.ok) {
     return NextResponse.json(
-      { error: data?.error?.message ?? 'Login failed' },
+      { error: 'error' in data ? data.error?.message ?? 'Login failed' : 'Login failed' },
       { status: res.status },
+    );
+  }
+  
+  if (!('tokens' in data)) {
+    return NextResponse.json(
+      { error: 'Invalid login response' },
+      { status: 500 },
     );
   }
 

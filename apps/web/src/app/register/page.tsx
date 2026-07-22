@@ -39,7 +39,7 @@ export default function RegisterPage() {
   return (
     <main className="mx-auto flex min-h-screen max-w-md flex-col justify-center px-6">
       <h1 className="font-display text-4xl">Create organization</h1>
-      <form onSubmit={onSubmit} className="mt-8 space-y-4" noValidate>
+      <form onSubmit={(event) => void onSubmit(event)} className="mt-8 space-y-4" noValidate>
         {(
           [
             ['organizationName', 'Organization', 'text'],

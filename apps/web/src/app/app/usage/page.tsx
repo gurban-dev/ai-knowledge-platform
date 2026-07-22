@@ -10,12 +10,12 @@ export default function UsagePage() {
       if (!res.ok) throw new Error('Failed to load usage');
       return (await res.json()) as {
         spentMicros: string;
-        breakdown: Array<{
+        breakdown: {
           kind: string;
           model: string;
           costMicros: string;
           events: number;
-        }>;
+        }[];
       };
     },
   });
