@@ -33,7 +33,7 @@ function extractApiKey(authorization?: string, xApiKey?: string): string | null 
 export async function buildMcpServer(deps: McpServerDeps) {
   const app = fastify({ logger: false });
 
-  app.get('/health/live', async () => ({ status: 'ok' }));
+  app.get('/health/live', () => ({ status: 'ok' }));
 
   app.get('/mcp/tools', async (request) => {
     const key = extractApiKey(
@@ -109,12 +109,16 @@ export async function buildMcpServer(deps: McpServerDeps) {
 async function verifyKey(deps: McpServerDeps, secret: string) {
   const keyHash = hashKey(secret);
   const row = await deps.prisma.apiKey.findUnique({ where: { keyHash } });
-  if (!row || row.status !== 'ACTIVE') {
+  if (row?.status !== 'ACTIVE') {
     throw new UnauthorizedError('Invalid API key');
   }
-  if (row.expiresAt && row.expiresAt < new Date()) {
+
+  const expiresAt = row.expiresAt?.getTime();
+
+  if (expiresAt !== undefined && expiresAt < Date.now()) {
     throw new UnauthorizedError('API key expired');
   }
+
   await deps.prisma.apiKey.update({
     where: { id: row.id },
     data: { lastUsedAt: new Date() },
@@ -138,10 +142,11 @@ async function invokeTool(
     case 'search_knowledge': {
       // Proxy to API search using the same API key by reconstructing from hash is impossible;
       // perform a constrained DB lexical search for MCP autonomy when API proxy isn't available.
-      const query = String(args.query ?? '');
+      const query = typeof args.query === 'string' ? args.query : '';
       const limit = Number(args.limit ?? 8);
+
       const rows = await deps.prisma.$queryRawUnsafe<
-        Array<{ id: string; document_id: string; content: string; score: number }>
+        { id: string; document_id: string; content: string; score: number }[]
       >(
         `SELECT c.id, c.document_id, c.content, similarity(c.content, $1)::float8 AS score
          FROM document_chunks c
@@ -172,9 +177,10 @@ async function invokeTool(
       });
     }
     case 'ask_question': {
-      const query = String(args.question ?? '');
+      const query = typeof args.question === 'string' ? args.question : '';
+
       const rows = await deps.prisma.$queryRawUnsafe<
-        Array<{ content: string; title: string }>
+        { content: string; title: string }[]
       >(
         `SELECT c.content, d.title
          FROM document_chunks c
