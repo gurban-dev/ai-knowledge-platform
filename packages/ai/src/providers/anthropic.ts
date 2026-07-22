@@ -67,7 +67,7 @@ export class AnthropicProvider implements AiProvider {
         );
       }
       const data = (await res.json()) as {
-        content?: Array<{ type: string; text?: string }>;
+        content?: { type: string; text?: string }[];
         usage?: { input_tokens?: number; output_tokens?: number };
         model?: string;
         stop_reason?: string;

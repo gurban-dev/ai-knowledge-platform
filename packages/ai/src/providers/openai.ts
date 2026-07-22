@@ -33,7 +33,7 @@ export class OpenAiProvider implements AiProvider {
       dimensions: request.dimensions,
     });
     const data = body as {
-      data: Array<{ embedding: number[]; index: number }>;
+      data: { embedding: number[]; index: number }[];
       usage?: { prompt_tokens?: number };
       model?: string;
     };
@@ -58,7 +58,7 @@ export class OpenAiProvider implements AiProvider {
       max_tokens: request.maxTokens ?? 1024,
     });
     const data = body as {
-      choices: Array<{ message?: { content?: string }; finish_reason?: string }>;
+      choices: { message?: { content?: string }; finish_reason?: string }[];
       usage?: { prompt_tokens?: number; completion_tokens?: number };
       model?: string;
     };
@@ -77,6 +77,7 @@ export class OpenAiProvider implements AiProvider {
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async rerank(request: RerankRequest): Promise<RerankResult> {
     // OpenAI has no first-party cross-encoder; use deterministic lexical scoring.
     const started = Date.now();

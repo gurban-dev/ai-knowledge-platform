@@ -41,7 +41,7 @@ export function renderPrompt(
 }
 
 export function formatContextBlocks(
-  chunks: Array<{ title: string; content: string; documentId: string }>,
+  chunks: { title: string; content: string; documentId: string }[],
 ): string {
   return chunks
     .map(

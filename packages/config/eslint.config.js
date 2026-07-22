@@ -8,8 +8,9 @@ export default [
         tsconfigRootDir: import.meta.dirname,
         projectService: {
           allowDefaultProject: [
-            "eslint.config.js",
-            "vitest.config.ts",
+            'eslint.config.js',
+            'vitest.config.ts',
+            '**/*.test.ts',
           ],
         },
       },

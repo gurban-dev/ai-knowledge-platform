@@ -18,6 +18,7 @@ import type {
 export class FakeAiProvider implements AiProvider {
   readonly name = 'fake';
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async embed(request: EmbeddingRequest): Promise<EmbeddingResult> {
     const started = Date.now();
     const embeddings = request.texts.map((text) => hashEmbedding(text, request.dimensions));
@@ -31,6 +32,7 @@ export class FakeAiProvider implements AiProvider {
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async chat(request: ChatRequest): Promise<ChatResult> {
     const started = Date.now();
     const lastUser = [...request.messages].reverse().find((m) => m.role === 'user');
@@ -55,6 +57,7 @@ export class FakeAiProvider implements AiProvider {
     };
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async rerank(request: RerankRequest): Promise<RerankResult> {
     const started = Date.now();
     const q = request.query.toLowerCase();
