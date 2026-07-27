@@ -8,6 +8,7 @@ import { createPrismaClient, toVectorLiteral, type PrismaClient } from '@akp/db'
 import { createLogger } from '@akp/observability';
 import { buildApp } from '../../src/app.js';
 import { buildContainer, type AppContainer } from '../../src/container.js';
+import type { GoogleOAuthProvider } from '../../src/lib/google-oauth.js';
 
 /** Integration tests run only when a test database is configured. */
 export const INTEGRATION_ENABLED = Boolean(process.env.TEST_DATABASE_URL);
@@ -29,11 +30,20 @@ export interface TestHarness {
   close: () => Promise<void>;
 }
 
+export interface HarnessOptions {
+  /**
+   * Substitute the Google OAuth provider with a deterministic fake and enable
+   * the feature, so the Google sign-in endpoints can be exercised without real
+   * Google credentials or network access.
+   */
+  googleOAuth?: GoogleOAuthProvider;
+}
+
 /**
  * Spin up the real Fastify app wired to the test Postgres + Redis. Tests drive
  * it through `app.inject()` (no network socket) for speed and determinism.
  */
-export async function createHarness(): Promise<TestHarness> {
+export async function createHarness(options: HarnessOptions = {}): Promise<TestHarness> {
   const databaseUrl = process.env.TEST_DATABASE_URL!;
   const config = loadConfig({
     ...process.env,
@@ -44,6 +54,10 @@ export async function createHarness(): Promise<TestHarness> {
       process.env.JWT_REFRESH_SECRET ?? 'test-refresh-secret-11111111111111111111',
     // Keep hashing cheap in tests.
     PASSWORD_HASH_MEMORY_COST: '8192',
+    // Flip on Google sign-in when a fake provider is injected.
+    ...(options.googleOAuth
+      ? { GOOGLE_CLIENT_ID: 'test-google-client', GOOGLE_CLIENT_SECRET: 'test-google-secret' }
+      : {}),
   });
 
   const logger = createLogger({ level: 'silent', serviceName: 'akp-api-test' });
@@ -51,6 +65,7 @@ export async function createHarness(): Promise<TestHarness> {
   const redis = new Redis(config.redis.url, { maxRetriesPerRequest: null, lazyConnect: false });
 
   const container = buildContainer({ config, logger, prisma, redis });
+  if (options.googleOAuth) container.googleOAuth = options.googleOAuth;
   const app = await buildApp({ container });
 
   const ingest = async (organizationId: string, documentId: string): Promise<number> => {

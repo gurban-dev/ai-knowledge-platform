@@ -232,8 +232,12 @@ model Organization {
 model User {
   id           String     @id
   email        String     @unique
-  // Argon2id hash; null for users who authenticate solely via SSO (future).
+  // Argon2id hash; null for users who authenticate solely via a federated
+  // identity provider (e.g. Google) and never set a password.
   passwordHash String?    @map("password_hash")
+  // Google OAuth subject ("sub") claim, when the account is linked to Google.
+  // Stable per Google account; unique so an identity maps to one user.
+  googleSub    String?    @unique @map("google_sub")
   name         String
   status       UserStatus @default(ACTIVE)
   // Optional URL to an avatar; kept small and validated at the API boundary.

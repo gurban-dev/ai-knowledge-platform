@@ -78,6 +78,12 @@ export const envSchema = z
     // Web app
     WEB_PUBLIC_URL: z.string().url().default('http://localhost:3000'),
 
+    // Google OAuth ("Sign in with Google"). Both values must be set to enable
+    // the flow; otherwise the endpoints report the feature as disabled. The
+    // client secret is only ever used server-side for the code->token exchange.
+    GOOGLE_CLIENT_ID: z.string().optional(),
+    GOOGLE_CLIENT_SECRET: z.string().optional(),
+
     // MCP
     MCP_HOST: z.string().default('0.0.0.0'),
     MCP_PORT: z.coerce.number().int().positive().max(65535).default(4100),

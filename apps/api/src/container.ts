@@ -6,6 +6,7 @@ import { createObjectStorage, type ObjectStorage } from '@akp/storage';
 import type { Redis } from 'ioredis';
 import type { Queue } from 'bullmq';
 import type { AppConfig } from './config.js';
+import { GoogleOAuthClient, type GoogleOAuthProvider } from './lib/google-oauth.js';
 import { JwtService } from './lib/jwt.js';
 import { createQueues } from './lib/queues.js';
 import type {
@@ -47,6 +48,7 @@ export interface AppContainer {
   metrics: AppMetrics;
   ai: AiProvider;
   storage: ObjectStorage;
+  googleOAuth: GoogleOAuthProvider;
   queues: {
     ingest: Queue<IngestJobPayload>;
     webhook: Queue<WebhookJobPayload>;
@@ -112,6 +114,11 @@ export function buildContainer(deps: ContainerDeps): AppContainer {
     localRoot: config.storage.localRoot,
     bucket: config.storage.bucket,
     gcsAccessToken: config.storage.gcsAccessToken,
+  });
+
+  const googleOAuth = new GoogleOAuthClient({
+    clientId: config.google.clientId,
+    clientSecret: config.google.clientSecret,
   });
 
   const queues = createQueues(config.queue.prefix, config.redis.url);
@@ -226,6 +233,7 @@ export function buildContainer(deps: ContainerDeps): AppContainer {
     metrics,
     ai,
     storage,
+    googleOAuth,
     queues,
     resolveTeamIds,
     repositories,

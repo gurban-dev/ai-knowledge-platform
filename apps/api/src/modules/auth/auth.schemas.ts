@@ -33,6 +33,29 @@ export const refreshBodySchema = z.object({
   refreshToken: z.string().min(1),
 });
 
+/** Body for completing the Google OAuth authorization-code exchange. */
+export const googleExchangeBodySchema = z.object({
+  code: z.string().min(1).max(2048),
+  redirectUri: z.string().url(),
+  /** Signed OAuth state returned by /google/start (binds PKCE verifier + redirect). */
+  state: z.string().min(1).max(4096),
+});
+
+/**
+ * Body for the Google Identity Services button / One Tap credential callback.
+ * The `idToken` is Google's OIDC JWT (`credential` field from GIS).
+ */
+export const googleCredentialBodySchema = z.object({
+  idToken: z.string().min(1).max(8192),
+});
+
+/** Complete an MFA challenge after password or Google primary-factor success. */
+export const completeMfaBodySchema = z.object({
+  mfaToken: z.string().min(1).max(4096),
+  mfaCode: z.string().trim().min(6).max(10).optional(),
+  recoveryCode: z.string().trim().min(6).max(20).optional(),
+});
+
 export const logoutBodySchema = z.object({
   refreshToken: z.string().min(1),
 });
@@ -74,7 +97,15 @@ export const profileSchema = z.object({
   role: roleSchema,
 });
 
+export const googleStartResponseSchema = z.object({
+  authorizationUrl: z.string().url(),
+  state: z.string(),
+});
+
 export type RegisterBody = z.infer<typeof registerBodySchema>;
 export type LoginBody = z.infer<typeof loginBodySchema>;
 export type RefreshBody = z.infer<typeof refreshBodySchema>;
 export type LogoutBody = z.infer<typeof logoutBodySchema>;
+export type GoogleExchangeBody = z.infer<typeof googleExchangeBodySchema>;
+export type GoogleCredentialBody = z.infer<typeof googleCredentialBodySchema>;
+export type CompleteMfaBody = z.infer<typeof completeMfaBodySchema>;

@@ -78,6 +78,12 @@ export interface AppConfig {
   readonly web: {
     readonly publicUrl: string;
   };
+  readonly google: {
+    /** True only when both client id and secret are configured. */
+    readonly enabled: boolean;
+    readonly clientId?: string;
+    readonly clientSecret?: string;
+  };
   readonly mcp: {
     readonly host: string;
     readonly port: number;
@@ -227,6 +233,11 @@ function shape(env: Env): AppConfig {
         : {}),
     },
     web: { publicUrl: env.WEB_PUBLIC_URL },
+    google: {
+      enabled: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+      ...(env.GOOGLE_CLIENT_ID ? { clientId: env.GOOGLE_CLIENT_ID } : {}),
+      ...(env.GOOGLE_CLIENT_SECRET ? { clientSecret: env.GOOGLE_CLIENT_SECRET } : {}),
+    },
     mcp: { host: env.MCP_HOST, port: env.MCP_PORT },
     observability: {
       otelEnabled: env.OTEL_ENABLED,

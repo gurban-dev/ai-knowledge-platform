@@ -5,7 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { GoogleSignInButton } from '@/components/google-sign-in-button';
+
+const OAUTH_ERRORS: Record<string, string> = {
+  google: 'Google sign-in could not be completed. Please try again.',
+  google_unavailable:
+    'Google sign-in is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.',
+};
 
 const schema = z.object({
   email: z.string().email(),
@@ -19,6 +26,12 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const form = useForm<FormValues>({ resolver: zodResolver(schema) });
 
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('error');
+    const message = reason ? OAUTH_ERRORS[reason] : undefined;
+    if (message) setError(message);
+  }, []);
+
   const onSubmit = form.handleSubmit(async (values) => {
     setError(null);
     const res = await fetch('/api/auth/login', {
@@ -26,8 +39,16 @@ export default function LoginPage() {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(values),
     });
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      mfaRequired?: boolean;
+      ok?: boolean;
+    };
+    if (res.ok && body.mfaRequired) {
+      router.push('/login/mfa');
+      return;
+    }
     if (!res.ok) {
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
       setError(body.error ?? 'Login failed');
       return;
     }
@@ -73,6 +94,7 @@ export default function LoginPage() {
           Continue
         </button>
       </form>
+      <GoogleSignInButton successPath="/app/chat" returnTo="/login" />
       <p className="mt-6 text-sm text-ink/70">
         No account?{' '}
         <Link href="/register" className="font-medium text-accent underline">

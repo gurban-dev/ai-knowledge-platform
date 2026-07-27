@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ConflictError, ForbiddenError, Role } from '@akp/core';
+import { ConflictError, ForbiddenError, Role, UnauthorizedError } from '@akp/core';
 import { InvalidCredentialsError, TokenInvalidError } from '../../lib/auth-errors.js';
 import { hashPassword, hashToken } from '../../lib/crypto.js';
 import { AuthService, type AuthServiceDeps } from './auth.service.js';
@@ -12,7 +12,9 @@ function makeUser(overrides: Partial<Record<string, unknown>> = {}) {
     email: 'user@acme.test',
     name: 'User',
     passwordHash: null,
+    googleSub: null,
     avatarUrl: null,
+    mfaEnabled: false,
     status: 'ACTIVE',
     lastLoginAt: null,
     createdAt: new Date(),
@@ -38,7 +40,12 @@ function makeDeps() {
   const users = {
     findByEmail: vi.fn(),
     findById: vi.fn(),
+    findByGoogleSub: vi.fn(),
+    linkGoogleSub: vi.fn(),
     create: vi.fn(),
+    update: vi.fn(async (id: string, data: Record<string, unknown>) =>
+      makeUser({ id, ...data }),
+    ),
     touchLastLogin: vi.fn().mockResolvedValue(undefined),
     withTx() {
       return users;
@@ -66,7 +73,11 @@ function makeDeps() {
     revokeAllForUser: vi.fn().mockResolvedValue(1),
   };
   const audit = { record: vi.fn().mockResolvedValue(undefined) };
-  const jwt = { signAccessToken: vi.fn().mockResolvedValue('access.jwt.token') };
+  const jwt = {
+    signAccessToken: vi.fn().mockResolvedValue('access.jwt.token'),
+    signMfaPendingToken: vi.fn().mockResolvedValue('mfa.pending.token'),
+    verifyMfaPendingToken: vi.fn(),
+  };
   const prisma = {
     $transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb({})),
   };
@@ -124,6 +135,127 @@ describe('AuthService.register', () => {
         {},
       ),
     ).rejects.toBeInstanceOf(ConflictError);
+  });
+});
+
+describe('AuthService.loginOrRegisterWithGoogle', () => {
+  let ctx: ReturnType<typeof makeDeps>;
+  beforeEach(() => {
+    ctx = makeDeps();
+  });
+
+  const identity = {
+    sub: 'google-sub-123',
+    email: 'Ada@Example.com',
+    emailVerified: true,
+    name: 'Ada Lovelace',
+    avatarUrl: 'https://pic',
+  };
+
+  it('provisions a new organization + owner on first Google sign-up', async () => {
+    ctx.mocks.users.findByGoogleSub.mockResolvedValue(null);
+    ctx.mocks.users.findByEmail.mockResolvedValue(null);
+    ctx.mocks.organizations.create.mockResolvedValue(makeOrg());
+    ctx.mocks.users.create.mockResolvedValue(
+      makeUser({ email: 'ada@example.com', googleSub: identity.sub }),
+    );
+    ctx.mocks.memberships.create.mockResolvedValue({});
+
+    const service = new AuthService(ctx.deps);
+    const result = await service.loginOrRegisterWithGoogle(identity, {});
+
+    expect(result.role).toBe(Role.OWNER);
+    expect(result.tokens.accessToken).toBe('access.jwt.token');
+    // New user is created with the Google subject and no password.
+    expect(ctx.mocks.users.create).toHaveBeenCalledWith(
+      expect.objectContaining({ googleSub: identity.sub, email: 'ada@example.com' }),
+    );
+    expect(ctx.mocks.users.create).toHaveBeenCalledWith(
+      expect.not.objectContaining({ passwordHash: expect.anything() }),
+    );
+    // org.created + user.registered.
+    expect(ctx.mocks.audit.record).toHaveBeenCalledTimes(2);
+  });
+
+  it('links the Google subject to an existing password account and signs in', async () => {
+    ctx.mocks.users.findByGoogleSub.mockResolvedValue(null);
+    ctx.mocks.users.findByEmail.mockResolvedValue(
+      makeUser({ email: 'ada@example.com', passwordHash: 'h', googleSub: null }),
+    );
+    ctx.mocks.users.linkGoogleSub.mockResolvedValue(
+      makeUser({ email: 'ada@example.com', passwordHash: 'h', googleSub: identity.sub }),
+    );
+    ctx.mocks.memberships.listActiveByUser.mockResolvedValue([
+      { organizationId: 'org_1', role: Role.ADMIN, organization: makeOrg() },
+    ]);
+
+    const service = new AuthService(ctx.deps);
+    const result = await service.loginOrRegisterWithGoogle(identity, {});
+
+    expect(ctx.mocks.users.linkGoogleSub).toHaveBeenCalledWith('usr_1', identity.sub);
+    expect(ctx.mocks.users.touchLastLogin).toHaveBeenCalledWith('usr_1');
+    expect(result.role).toBe(Role.ADMIN);
+    // No new organization is provisioned for an existing account.
+    expect(ctx.mocks.organizations.create).not.toHaveBeenCalled();
+  });
+
+  it('signs in an account already linked by Google subject without re-linking', async () => {
+    ctx.mocks.users.findByGoogleSub.mockResolvedValue(
+      makeUser({ email: 'ada@example.com', googleSub: identity.sub }),
+    );
+    ctx.mocks.memberships.listActiveByUser.mockResolvedValue([
+      { organizationId: 'org_1', role: Role.MEMBER, organization: makeOrg() },
+    ]);
+
+    const service = new AuthService(ctx.deps);
+    const result = await service.loginOrRegisterWithGoogle(identity, {});
+
+    expect(result.role).toBe(Role.MEMBER);
+    expect(ctx.mocks.users.findByEmail).not.toHaveBeenCalled();
+    expect(ctx.mocks.users.linkGoogleSub).not.toHaveBeenCalled();
+  });
+
+  it('rejects an unverified Google email', async () => {
+    const service = new AuthService(ctx.deps);
+    await expect(
+      service.loginOrRegisterWithGoogle({ ...identity, emailVerified: false }, {}),
+    ).rejects.toBeInstanceOf(UnauthorizedError);
+    expect(ctx.mocks.users.findByGoogleSub).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the email is already linked to a different Google subject', async () => {
+    ctx.mocks.users.findByGoogleSub.mockResolvedValue(null);
+    ctx.mocks.users.findByEmail.mockResolvedValue(
+      makeUser({ email: 'ada@example.com', googleSub: 'google-sub-other' }),
+    );
+
+    const service = new AuthService(ctx.deps);
+    await expect(service.loginOrRegisterWithGoogle(identity, {})).rejects.toBeInstanceOf(
+      ConflictError,
+    );
+    expect(ctx.mocks.users.linkGoogleSub).not.toHaveBeenCalled();
+  });
+
+  it('challenges MFA for an existing MFA-enabled account instead of issuing a session', async () => {
+    ctx.mocks.users.findByGoogleSub.mockResolvedValue(
+      makeUser({
+        email: 'ada@example.com',
+        googleSub: identity.sub,
+        mfaEnabled: true,
+        avatarUrl: 'https://pic',
+      }),
+    );
+    ctx.mocks.memberships.listActiveByUser.mockResolvedValue([
+      { organizationId: 'org_1', role: Role.MEMBER, organization: makeOrg() },
+    ]);
+
+    const service = new AuthService(ctx.deps);
+    await expect(service.loginOrRegisterWithGoogle(identity, {})).rejects.toMatchObject({
+      code: 'MFA_REQUIRED',
+      details: { mfaToken: 'mfa.pending.token' },
+    });
+    expect(ctx.mocks.jwt.signMfaPendingToken).toHaveBeenCalledWith('usr_1');
+    expect(ctx.mocks.sessions.create).not.toHaveBeenCalled();
   });
 });
 

@@ -5,7 +5,14 @@ import { useRouter } from 'next/navigation';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { GoogleSignInButton } from '@/components/google-sign-in-button';
+
+const OAUTH_ERRORS: Record<string, string> = {
+  google: 'Google sign-up could not be completed. Please try again.',
+  google_unavailable:
+    'Google sign-up is not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env.',
+};
 
 const schema = z.object({
   name: z.string().min(1),
@@ -20,6 +27,12 @@ export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const form = useForm<FormValues>({ resolver: zodResolver(schema) });
+
+  useEffect(() => {
+    const reason = new URLSearchParams(window.location.search).get('error');
+    const message = reason ? OAUTH_ERRORS[reason] : undefined;
+    if (message) setError(message);
+  }, []);
 
   const onSubmit = form.handleSubmit(async (values) => {
     setError(null);
@@ -69,6 +82,11 @@ export default function RegisterPage() {
           Create account
         </button>
       </form>
+      <GoogleSignInButton
+        label="Sign up with Google"
+        successPath="/app/documents"
+        returnTo="/register"
+      />
       <p className="mt-6 text-sm">
         <Link href="/login" className="text-accent underline">
           Back to sign in

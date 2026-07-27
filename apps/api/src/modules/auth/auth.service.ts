@@ -71,6 +71,32 @@ export interface LoginInput {
   recoveryCode?: string | undefined;
 }
 
+export interface GoogleAuthInput {
+  sub: string;
+  email: string;
+  emailVerified: boolean;
+  name: string;
+  avatarUrl?: string | undefined;
+}
+
+export interface CompleteMfaInput {
+  /** Short-lived token issued after primary-factor success (password or Google). */
+  mfaToken: string;
+  mfaCode?: string | undefined;
+  recoveryCode?: string | undefined;
+}
+
+/**
+ * Derive a friendly default organization name for a Google sign-up. Prefers the
+ * user's first name ("Ada Lovelace" -> "Ada's Workspace"), falling back to the
+ * email local part when no usable name is present.
+ */
+function deriveWorkspaceName(name: string, email: string): string {
+  const firstName = name.trim().split(/\s+/)[0];
+  const base = firstName && firstName.length > 0 ? firstName : (email.split('@')[0] ?? 'My');
+  return `${base}'s Workspace`;
+}
+
 /**
  * Authentication & session lifecycle.
  *
@@ -95,49 +121,119 @@ export class AuthService {
       throw new ConflictError('An account with this email already exists', ErrorCode.ALREADY_EXISTS);
     }
 
-    const slug = await this.allocateSlug(input.organizationName);
     const passwordHash = await hashPassword(input.password, this.deps.config.passwordHashMemoryCost);
 
-    const { organization, user } = await this.deps.prisma.$transaction(async (tx) => {
-      const org = await this.deps.organizations.withTx(tx).create({
-        id: newId(IdPrefix.organization),
-        name: input.organizationName,
-        slug,
-      });
-      const createdUser = await this.deps.users.withTx(tx).create({
-        id: newId(IdPrefix.user),
+    const { organization, user } = await this.provisionOwner(
+      {
         email,
         name: input.name,
+        organizationName: input.organizationName,
         passwordHash,
-      });
-      await this.deps.memberships.withTx(tx).create({
-        id: newId(IdPrefix.membership),
-        organizationId: org.id,
-        userId: createdUser.id,
-        role: Role.OWNER,
-      });
-      return { organization: org, user: createdUser };
-    });
-
-    await this.deps.audit.record({
-      organizationId: organization.id,
-      actorUserId: user.id,
-      action: AuditAction.OrganizationCreated,
-      resourceType: 'organization',
-      resourceId: organization.id,
-      ...meta,
-    });
-    await this.deps.audit.record({
-      organizationId: organization.id,
-      actorUserId: user.id,
-      action: AuditAction.UserRegistered,
-      resourceType: 'user',
-      resourceId: user.id,
-      ...meta,
-    });
+      },
+      meta,
+    );
 
     const { tokens } = await this.issueSession(user, organization, Role.OWNER, meta);
     return this.buildResult(user, organization, Role.OWNER, tokens);
+  }
+
+  /**
+   * Sign in — or, on first contact, sign up — a user via a verified Google
+   * identity. Resolution order:
+   *   1. Account already linked to this Google subject → sign in.
+   *   2. Account with the same (Google-verified) email → link the subject, sign in.
+   *   3. No account → provision a fresh organization with this user as OWNER.
+   *
+   * Google-provisioned accounts have no password (`passwordHash` is null), so
+   * the password login path can never authenticate them.
+   */
+  async loginOrRegisterWithGoogle(input: GoogleAuthInput, meta: RequestMeta): Promise<AuthResult> {
+    if (!input.emailVerified) {
+      // Never trust an unverified email — it could belong to someone else.
+      throw new UnauthorizedError('Your Google account email is not verified');
+    }
+    const email = input.email.toLowerCase();
+
+    let user = await this.deps.users.findByGoogleSub(input.sub);
+
+    if (!user) {
+      const byEmail = await this.deps.users.findByEmail(email);
+      if (byEmail) {
+        if (byEmail.googleSub && byEmail.googleSub !== input.sub) {
+          // Email already linked to a different Google subject — refuse rather
+          // than silently signing the wrong identity into that account.
+          throw new ConflictError(
+            'This email is already linked to a different Google account',
+            ErrorCode.ALREADY_EXISTS,
+          );
+        }
+        // Adopt this Google subject the first time an existing account uses it.
+        user =
+          byEmail.googleSub === input.sub
+            ? byEmail
+            : await this.deps.users.linkGoogleSub(byEmail.id, input.sub);
+      }
+    }
+
+    // First-ever contact: provision an organization for the new user.
+    if (!user) {
+      const { organization, user: created } = await this.provisionOwner(
+        {
+          email,
+          name: input.name,
+          organizationName: deriveWorkspaceName(input.name, email),
+          googleSub: input.sub,
+          ...(input.avatarUrl ? { avatarUrl: input.avatarUrl } : {}),
+        },
+        meta,
+      );
+      const { tokens } = await this.issueSession(created, organization, Role.OWNER, meta);
+      return this.buildResult(created, organization, Role.OWNER, tokens);
+    }
+
+    // Existing account: refresh avatar from Google when we have one and the
+    // profile is still empty, then continue through the shared MFA gate.
+    if (input.avatarUrl && !user.avatarUrl) {
+      user = await this.deps.users.update(user.id, { avatarUrl: input.avatarUrl });
+    }
+
+    return this.finishLogin(user, meta);
+  }
+
+  /**
+   * Complete authentication after a primary factor (password or Google) when
+   * the account has MFA enabled. The {@link CompleteMfaInput.mfaToken} is a
+   * short-lived JWT proving that primary-factor verification already succeeded.
+   */
+  async completeMfa(input: CompleteMfaInput, meta: RequestMeta): Promise<AuthResult> {
+    const pending = await this.deps.jwt.verifyMfaPendingToken(input.mfaToken);
+    const user = await this.deps.users.findById(pending.sub);
+    if (!user?.mfaEnabled) {
+      throw new UnauthorizedError('MFA challenge is no longer valid');
+    }
+    if (!this.deps.mfa) {
+      throw new UnauthorizedError('MFA verification is unavailable');
+    }
+    if (!input.mfaCode && !input.recoveryCode) {
+      throw new MfaRequiredError('Multi-factor authentication required');
+    }
+
+    const membership = await this.resolveActiveMembership(user.id);
+    await this.deps.mfa.verifyForLogin(user, {
+      token: input.mfaCode,
+      recoveryCode: input.recoveryCode,
+    });
+
+    await this.deps.users.touchLastLogin(user.id);
+    const { tokens } = await this.issueSession(user, membership.organization, membership.role, meta);
+    await this.deps.audit.record({
+      organizationId: membership.organizationId,
+      actorUserId: user.id,
+      action: AuditAction.AuthLoginSucceeded,
+      resourceType: 'session',
+      ...meta,
+    });
+    return this.buildResult(user, membership.organization, membership.role, tokens);
   }
 
   /** Authenticate with email + password and start a session. */
@@ -155,21 +251,11 @@ export class AuthService {
       throw new InvalidCredentialsError();
     }
 
-    const membership = await this.resolveActiveMembership(user.id);
-
-    // Second factor: enforced only after the password is verified so a missing
-    // code cannot be used to probe credentials.
-    if (user.mfaEnabled) {
-      if (!input.mfaToken && !input.recoveryCode) {
-        await this.deps.audit.record({
-          organizationId: membership.organizationId,
-          actorUserId: user.id,
-          action: AuditAction.AuthMfaChallenged,
-          resourceType: 'session',
-          ...meta,
-        });
-        throw new MfaRequiredError();
-      }
+    // When the client already supplied a TOTP/recovery code with the password,
+    // verify inline (API-compatible). Otherwise route through the shared MFA
+    // gate which issues a short-lived pending token for the MFA challenge UI.
+    if (user.mfaEnabled && (input.mfaToken || input.recoveryCode)) {
+      const membership = await this.resolveActiveMembership(user.id);
       if (!this.deps.mfa) {
         throw new UnauthorizedError('MFA verification is unavailable');
       }
@@ -177,20 +263,19 @@ export class AuthService {
         token: input.mfaToken,
         recoveryCode: input.recoveryCode,
       });
+      await this.deps.users.touchLastLogin(user.id);
+      const { tokens } = await this.issueSession(user, membership.organization, membership.role, meta);
+      await this.deps.audit.record({
+        organizationId: membership.organizationId,
+        actorUserId: user.id,
+        action: AuditAction.AuthLoginSucceeded,
+        resourceType: 'session',
+        ...meta,
+      });
+      return this.buildResult(user, membership.organization, membership.role, tokens);
     }
 
-    await this.deps.users.touchLastLogin(user.id);
-    const { tokens } = await this.issueSession(user, membership.organization, membership.role, meta);
-
-    await this.deps.audit.record({
-      organizationId: membership.organizationId,
-      actorUserId: user.id,
-      action: AuditAction.AuthLoginSucceeded,
-      resourceType: 'session',
-      ...meta,
-    });
-
-    return this.buildResult(user, membership.organization, membership.role, tokens);
+    return this.finishLogin(user, meta);
   }
 
   /**
@@ -280,6 +365,98 @@ export class AuthService {
   }
 
   // ----------------------------- internals ---------------------------------
+
+  /**
+   * Shared post-primary-factor path for password and Google. If MFA is enabled,
+   * issue a short-lived pending token and challenge; otherwise mint a session.
+   */
+  private async finishLogin(user: User, meta: RequestMeta): Promise<AuthResult> {
+    const membership = await this.resolveActiveMembership(user.id);
+
+    if (user.mfaEnabled) {
+      await this.deps.audit.record({
+        organizationId: membership.organizationId,
+        actorUserId: user.id,
+        action: AuditAction.AuthMfaChallenged,
+        resourceType: 'session',
+        ...meta,
+      });
+      const mfaToken = await this.deps.jwt.signMfaPendingToken(user.id);
+      throw new MfaRequiredError('Multi-factor authentication required', { mfaToken });
+    }
+
+    await this.deps.users.touchLastLogin(user.id);
+    const { tokens } = await this.issueSession(user, membership.organization, membership.role, meta);
+    await this.deps.audit.record({
+      organizationId: membership.organizationId,
+      actorUserId: user.id,
+      action: AuditAction.AuthLoginSucceeded,
+      resourceType: 'session',
+      ...meta,
+    });
+    return this.buildResult(user, membership.organization, membership.role, tokens);
+  }
+
+  /**
+   * Create an organization, its first user, and an OWNER membership atomically,
+   * then emit the org-created + user-registered audit events. Shared by the
+   * password (register) and Google sign-up paths so provisioning stays identical.
+   */
+  private async provisionOwner(
+    params: {
+      email: string;
+      name: string;
+      organizationName: string;
+      passwordHash?: string | undefined;
+      googleSub?: string | undefined;
+      avatarUrl?: string | undefined;
+    },
+    meta: RequestMeta,
+  ): Promise<{ organization: Organization; user: User }> {
+    const slug = await this.allocateSlug(params.organizationName);
+
+    const { organization, user } = await this.deps.prisma.$transaction(async (tx) => {
+      const org = await this.deps.organizations.withTx(tx).create({
+        id: newId(IdPrefix.organization),
+        name: params.organizationName,
+        slug,
+      });
+      const createdUser = await this.deps.users.withTx(tx).create({
+        id: newId(IdPrefix.user),
+        email: params.email,
+        name: params.name,
+        ...(params.passwordHash !== undefined ? { passwordHash: params.passwordHash } : {}),
+        ...(params.googleSub !== undefined ? { googleSub: params.googleSub } : {}),
+        ...(params.avatarUrl !== undefined ? { avatarUrl: params.avatarUrl } : {}),
+      });
+      await this.deps.memberships.withTx(tx).create({
+        id: newId(IdPrefix.membership),
+        organizationId: org.id,
+        userId: createdUser.id,
+        role: Role.OWNER,
+      });
+      return { organization: org, user: createdUser };
+    });
+
+    await this.deps.audit.record({
+      organizationId: organization.id,
+      actorUserId: user.id,
+      action: AuditAction.OrganizationCreated,
+      resourceType: 'organization',
+      resourceId: organization.id,
+      ...meta,
+    });
+    await this.deps.audit.record({
+      organizationId: organization.id,
+      actorUserId: user.id,
+      action: AuditAction.UserRegistered,
+      resourceType: 'user',
+      resourceId: user.id,
+      ...meta,
+    });
+
+    return { organization, user };
+  }
 
   private async issueSession(
     user: User,

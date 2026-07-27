@@ -1,10 +1,16 @@
 import type { FastifyPluginAsync, FastifyRequest } from 'fastify';
 import type { ZodTypeProvider } from 'fastify-type-provider-zod';
 import { z } from 'zod';
+import { FeatureDisabledError, UnauthorizedError, ValidationError } from '@akp/core';
 import { commonErrorResponses } from '../../lib/http.js';
+import { createOAuthState, verifyOAuthState } from '../../lib/oauth-state.js';
 import type { RequestMeta } from './auth.types.js';
 import {
   authResultSchema,
+  completeMfaBodySchema,
+  googleCredentialBodySchema,
+  googleExchangeBodySchema,
+  googleStartResponseSchema,
   loginBodySchema,
   logoutBodySchema,
   profileSchema,
@@ -21,6 +27,9 @@ function requestMeta(request: FastifyRequest): RequestMeta {
 
 /** Tighter limits on unauthenticated credential endpoints to slow brute force. */
 const authRateLimit = { max: 10, timeWindow: 60_000 };
+
+/** Exact Google callback path under the public web origin. */
+const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback';
 
 export const authRoutes: FastifyPluginAsync = async (app) => {
   const fastify = app.withTypeProvider<ZodTypeProvider>();
@@ -56,6 +65,20 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       config: { rateLimit: authRateLimit },
     },
     async (request) => auth.login(request.body, requestMeta(request)),
+  );
+
+  fastify.post(
+    '/mfa/complete',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Complete MFA after password or Google primary-factor success',
+        body: completeMfaBodySchema,
+        response: { 200: authResultSchema, ...commonErrorResponses },
+      },
+      config: { rateLimit: authRateLimit },
+    },
+    async (request) => auth.completeMfa(request.body, requestMeta(request)),
   );
 
   fastify.post(
@@ -101,5 +124,125 @@ export const authRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request) => auth.getProfile(request.auth!.userId),
+  );
+
+  /**
+   * Only the web app's exact Google callback URL is allowed. Google Console also
+   * enforces registered redirect URIs; this is defense in depth.
+   */
+  const assertTrustedRedirect = (redirectUri: string): void => {
+    const base = fastify.container.config.web.publicUrl.replace(/\/$/, '');
+    const allowed = `${base}${GOOGLE_CALLBACK_PATH}`;
+    if (redirectUri !== allowed) {
+      throw new ValidationError('redirectUri is not an allowed callback URL');
+    }
+  };
+
+  const assertGoogleEnabled = (): void => {
+    if (!fastify.container.config.google.enabled) {
+      throw new FeatureDisabledError('Google sign-in is not configured');
+    }
+  };
+
+  fastify.get(
+    '/google/config',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Public Google Identity Services config (client id is not a secret)',
+        response: {
+          200: z.object({
+            enabled: z.boolean(),
+            clientId: z.string().nullable(),
+          }),
+          ...commonErrorResponses,
+        },
+      },
+    },
+    async () => {
+      const clientId = fastify.container.config.google.clientId ?? null;
+      return {
+        enabled: fastify.container.config.google.enabled,
+        clientId,
+      };
+    },
+  );
+
+  fastify.get(
+    '/google/start',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Begin Google OAuth: get the consent-screen URL and a signed CSRF/PKCE state',
+        querystring: z.object({ redirectUri: z.string().url() }),
+        response: { 200: googleStartResponseSchema, ...commonErrorResponses },
+      },
+      config: { rateLimit: authRateLimit },
+    },
+    async (request) => {
+      assertGoogleEnabled();
+      assertTrustedRedirect(request.query.redirectUri);
+      const { state, codeChallenge } = createOAuthState(
+        request.query.redirectUri,
+        fastify.container.config.auth.accessSecret,
+      );
+      const authorizationUrl = fastify.container.googleOAuth.buildAuthorizationUrl({
+        redirectUri: request.query.redirectUri,
+        state,
+        codeChallenge,
+      });
+      return { authorizationUrl, state };
+    },
+  );
+
+  fastify.post(
+    '/google/exchange',
+    {
+      schema: {
+        tags: ['auth'],
+        summary: 'Complete Google OAuth: exchange the code (+ PKCE) for an authenticated session',
+        body: googleExchangeBodySchema,
+        response: { 200: authResultSchema, ...commonErrorResponses },
+      },
+      config: { rateLimit: authRateLimit },
+    },
+    async (request) => {
+      assertGoogleEnabled();
+      assertTrustedRedirect(request.body.redirectUri);
+
+      const payload = verifyOAuthState(
+        request.body.state,
+        fastify.container.config.auth.accessSecret,
+      );
+      if (!payload?.redirectUri || payload.redirectUri !== request.body.redirectUri) {
+        throw new UnauthorizedError('Invalid or expired OAuth state');
+      }
+
+      const identity = await fastify.container.googleOAuth.exchangeCode({
+        code: request.body.code,
+        redirectUri: request.body.redirectUri,
+        codeVerifier: payload.codeVerifier,
+      });
+      return auth.loginOrRegisterWithGoogle(identity, requestMeta(request));
+    },
+  );
+
+  fastify.post(
+    '/google/credential',
+    {
+      schema: {
+        tags: ['auth'],
+        summary:
+          'Complete Google sign-in from the GIS button / One Tap credential (OIDC id_token)',
+        body: googleCredentialBodySchema,
+        response: { 200: authResultSchema, ...commonErrorResponses },
+      },
+      config: { rateLimit: authRateLimit },
+    },
+    async (request) => {
+      assertGoogleEnabled();
+      const identity = await fastify.container.googleOAuth.verifyIdToken(request.body.idToken);
+      return auth.loginOrRegisterWithGoogle(identity, requestMeta(request));
+    },
   );
 };
