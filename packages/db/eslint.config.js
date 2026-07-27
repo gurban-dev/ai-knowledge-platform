@@ -4,6 +4,11 @@ export default [
   ...baseConfig,
 
   {
+    // Standalone operational Node script (not part of the TS project graph).
+    ignores: ['prisma/migrate-test.mjs'],
+  },
+
+  {
     languageOptions: {
       parserOptions: {
         tsconfigRootDir: import.meta.dirname,
