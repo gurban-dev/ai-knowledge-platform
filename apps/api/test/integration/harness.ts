@@ -1,19 +1,30 @@
 import type { FastifyInstance } from 'fastify';
 import { Redis } from 'ioredis';
 import type { Redis as RedisClient } from 'ioredis';
+import { chunkText } from '@akp/ai';
 import { loadConfig } from '@akp/config';
-import { createPrismaClient, type PrismaClient } from '@akp/db';
+import { IdPrefix, newId } from '@akp/core';
+import { createPrismaClient, toVectorLiteral, type PrismaClient } from '@akp/db';
 import { createLogger } from '@akp/observability';
 import { buildApp } from '../../src/app.js';
-import { buildContainer } from '../../src/container.js';
+import { buildContainer, type AppContainer } from '../../src/container.js';
 
 /** Integration tests run only when a test database is configured. */
 export const INTEGRATION_ENABLED = Boolean(process.env.TEST_DATABASE_URL);
 
 export interface TestHarness {
   app: FastifyInstance;
+  container: AppContainer;
   prisma: PrismaClient;
   redis: RedisClient;
+  /**
+   * Synchronously run the ingestion pipeline for a document. Mirrors
+   * `apps/worker/src/ingest.ts` (load → chunk → embed → write pgvector rows →
+   * mark INDEXED) so retrieval flows can be exercised without booting a
+   * separate worker process. Uses the container's configured AI + storage, so
+   * the deterministic FakeAiProvider keeps runs reproducible in CI.
+   */
+  ingest: (organizationId: string, documentId: string) => Promise<number>;
   reset: () => Promise<void>;
   close: () => Promise<void>;
 }
@@ -42,6 +53,46 @@ export async function createHarness(): Promise<TestHarness> {
   const container = buildContainer({ config, logger, prisma, redis });
   const app = await buildApp({ container });
 
+  const ingest = async (organizationId: string, documentId: string): Promise<number> => {
+    const doc = await prisma.document.findFirstOrThrow({
+      where: { id: documentId, organizationId },
+    });
+    if (!doc.sourceUri) throw new Error(`Document ${documentId} is missing a source object`);
+
+    const text = (await container.storage.get(organizationId, doc.sourceUri)).toString('utf8');
+    const chunks = chunkText(text);
+    await prisma.documentChunk.deleteMany({ where: { documentId, organizationId } });
+
+    const embed = await container.ai.embed({
+      texts: chunks.map((c) => c.content),
+      model: config.ai.embeddingModel,
+      dimensions: config.ai.embeddingDimensions,
+    });
+
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i]!;
+      await prisma.$executeRawUnsafe(
+        `INSERT INTO document_chunks
+           (id, organization_id, document_id, chunk_index, content, token_count, embedding, embedding_model, embedding_version, metadata, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7::vector, $8, 1, '{}'::jsonb, NOW())`,
+        newId(IdPrefix.chunk),
+        organizationId,
+        documentId,
+        chunk.index,
+        chunk.content,
+        chunk.tokenCount,
+        toVectorLiteral(embed.embeddings[i]!),
+        embed.model,
+      );
+    }
+
+    await prisma.document.update({
+      where: { id: documentId },
+      data: { status: 'INDEXED', indexedAt: new Date(), error: null },
+    });
+    return chunks.length;
+  };
+
   const reset = async (): Promise<void> => {
     // Truncate all domain tables; CASCADE handles FK order. Restart identity is
     // unnecessary since ids are app-generated.
@@ -67,5 +118,5 @@ export async function createHarness(): Promise<TestHarness> {
     redis.disconnect();
   };
 
-  return { app, prisma, redis, reset, close };
+  return { app, container, prisma, redis, ingest, reset, close };
 }

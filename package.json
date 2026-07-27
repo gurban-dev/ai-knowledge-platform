@@ -21,6 +21,7 @@
     "db:generate": "pnpm --filter @akp/db generate",
     "db:migrate": "pnpm --filter @akp/db migrate:dev",
     "db:deploy": "pnpm --filter @akp/db migrate:deploy",
+    "db:migrate:test": "pnpm --filter @akp/db migrate:test",
     "db:seed": "pnpm --filter @akp/db seed",
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",

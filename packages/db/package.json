@@ -25,6 +25,7 @@
     "generate": "prisma generate",
     "migrate:dev": "prisma migrate dev",
     "migrate:deploy": "prisma migrate deploy",
+    "migrate:test": "node prisma/migrate-test.mjs",
     "migrate:reset": "prisma migrate reset --force",
     "studio": "prisma studio",
     "seed": "tsx prisma/seed.ts",

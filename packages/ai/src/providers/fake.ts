@@ -14,6 +14,10 @@ import type {
  * Deterministic offline provider for local development and CI.
  * Produces stable embeddings from content hashes so hybrid retrieval tests
  * remain reproducible without network calls or API keys.
+ *
+ * Cost is estimated using the *configured* model's public pricing (not a flat
+ * zero) so budget enforcement and the usage/cost dashboard remain meaningful in
+ * local development without spending real API credits.
  */
 export class FakeAiProvider implements AiProvider {
   readonly name = 'fake';
@@ -23,12 +27,13 @@ export class FakeAiProvider implements AiProvider {
     const started = Date.now();
     const embeddings = request.texts.map((text) => hashEmbedding(text, request.dimensions));
     const promptTokens = request.texts.reduce((sum, t) => sum + Math.ceil(t.length / 4), 0);
+    const model = request.model || 'fake';
     return {
       embeddings,
-      model: request.model || 'fake',
+      model,
       promptTokens,
       latencyMs: Date.now() - started,
-      costMicros: embeddingCostMicros('fake', promptTokens),
+      costMicros: embeddingCostMicros(model, promptTokens),
     };
   }
 
@@ -46,13 +51,14 @@ export class FakeAiProvider implements AiProvider {
         : `I don't have enough grounded information to answer: ${lastUser?.content ?? ''}`;
     const promptTokens = request.messages.reduce((s, m) => s + Math.ceil(m.content.length / 4), 0);
     const completionTokens = Math.ceil(content.length / 4);
+    const model = request.model || 'fake';
     return {
       content,
-      model: request.model || 'fake',
+      model,
       promptTokens,
       completionTokens,
       latencyMs: Date.now() - started,
-      costMicros: chatCostMicros('fake', promptTokens, completionTokens),
+      costMicros: chatCostMicros(model, promptTokens, completionTokens),
       finishReason: 'stop',
     };
   }
