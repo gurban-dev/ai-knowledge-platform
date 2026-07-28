@@ -55,3 +55,4 @@ packages/db/prisma/seed.js
 
 # Misc
 __shell_alive__.marker
+.tools/

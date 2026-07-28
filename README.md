@@ -91,6 +91,19 @@ For additional documentation, see:
 
 - Redis (or Docker)
 
+## Share a live demo (free public link)
+
+With the app already running locally (`pnpm docker:up`, API on `:4000`, web on `:3000`),
+you can publish a free HTTPS URL that recruiters can open in a browser:
+
+```bash
+./scripts/demo-tunnel.sh
+```
+
+The script prints a `https://….trycloudflare.com` link. Keep that terminal (and your
+machine) running while people use the demo. Stopping the tunnel or sleeping the
+computer takes the link offline, and restarting creates a new URL.
+
 ## Initial Setup
 
 Run the following commands from the repository root:
