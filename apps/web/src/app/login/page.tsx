@@ -27,10 +27,26 @@ export default function LoginPage() {
   const form = useForm<FormValues>({ resolver: zodResolver(schema) });
 
   useEffect(() => {
-    const reason = new URLSearchParams(window.location.search).get('error');
+    const params = new URLSearchParams(window.location.search);
+    const reason = params.get('error');
     const message = reason ? OAUTH_ERRORS[reason] : undefined;
     if (message) setError(message);
   }, []);
+
+  const safeNextPath = (): '/app/chat' | '/app/documents' | '/app/search' | '/app/usage' | '/app/settings' => {
+    const raw = new URLSearchParams(window.location.search).get('next');
+    const allowed = new Set([
+      '/app/chat',
+      '/app/documents',
+      '/app/search',
+      '/app/usage',
+      '/app/settings',
+    ]);
+    if (raw && allowed.has(raw)) {
+      return raw as '/app/chat' | '/app/documents' | '/app/search' | '/app/usage' | '/app/settings';
+    }
+    return '/app/chat';
+  };
 
   const onSubmit = form.handleSubmit(async (values) => {
     setError(null);
@@ -52,7 +68,7 @@ export default function LoginPage() {
       setError(body.error ?? 'Login failed');
       return;
     }
-    router.push('/app/chat');
+    router.push(safeNextPath());
   });
 
   return (
