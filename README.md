@@ -1,41 +1,62 @@
 # AI Knowledge Automation Platform
 
-A production-grade B2B SaaS platform that lets organizations securely connect their
+## In plain English
 
-internal knowledge to AI—with first-class observability into retrieval quality,
+Companies have lots of internal documents: policies, manuals, wikis, notes.
+People waste time searching for answers, and generic AI chatbots often guess
+wrong because they do not know that private content.
 
-accuracy, hallucinations, latency, token usage, and cost.
+**This project is a secure workplace AI assistant for organizations.**
+
+1. A team uploads their documents into the product.
+2. The system learns from those documents (without exposing them publicly).
+3. Employees ask questions in chat and get answers based on the company’s own
+   knowledge, with citations back to the source.
+4. Admins can see whether answers are trustworthy, how fast they are, and how
+   much they cost.
+
+Think of it as **ChatGPT for your company’s private knowledge**, but built
+like real B2B software: logins, organizations, permissions, audit trails, and
+monitoring, not a one-off demo.
+
+### What you can do in the app
+
+- Create an organization and sign in (email/password or Google)
+- Upload documents into a knowledge library
+- Search and chat over that knowledge with citations
+- Review usage, cost, and quality signals
+
+### Built with
+
+TypeScript monorepo: **Next.js** (web), **Fastify** (API), **Postgres + pgvector**
+(data/search), **Redis + BullMQ** (background jobs).
+
+---
+
+## For engineers
+
+A production-oriented multi-tenant B2B SaaS platform that connects internal
+knowledge to AI, with observability into retrieval quality, accuracy,
+hallucinations, latency, token usage, and cost.
 
 ## Status
 
 | Phase | Scope | State |
-
 |------:|-------|:-----:|
-
 | 0 | Monorepo foundation, shared packages, CI, Docker | ✅ Done |
-
 | 1 | Relational + vector data model (Prisma + pgvector) | ✅ Done |
-
 | 2 | API core: Auth (email + Google OAuth), Orgs, RBAC, Audit, MFA, API keys | ✅ Done |
-
 | 3 | Web app (Next.js): auth, chat, documents, usage | ✅ Done |
-
 | 4 | Ingestion workers (BullMQ), chunking, embeddings | ✅ Done |
-
 | 5 | Hybrid retrieval, reranking, chat, citations, grounding | ✅ Done |
-
 | 6 | Evaluations, usage/cost, budgets, quality signals | ✅ Done |
-
 | 7 | MCP server, webhooks, teams, document ACLs | ✅ Done |
-
 | 8 | Infrastructure: Dockerfiles, Kubernetes, Terraform skeleton, compliance documentation | ✅ Done |
 
 For additional documentation, see:
 
 - `docs/ROADMAP.md`
-
 - `docs/ARCHITECTURE.md`
-
 - `docs/COMPLIANCE.md`
 
 ---
