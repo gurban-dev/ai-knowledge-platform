@@ -13,11 +13,11 @@ services:
     ipAllowList: []
 
   - type: web
-    name: akp-api
+    name: akp-fastapi-backend
     runtime: node
     plan: free
     region: oregon
-    repo: https://github.com/gurban-dev/ai-knowledge-platform-nextjs-fastify
+    repo: https://github.com/gurban-dev/ai-knowledge-platform-nextjs-fastapi
     branch: main
     healthCheckPath: /health/live
     buildCommand: bash scripts/render-build-api.sh
@@ -65,11 +65,11 @@ services:
         sync: false
 
   - type: web
-    name: akp-web
+    name: ai-knowledge-platform-app
     runtime: node
     plan: free
     region: oregon
-    repo: https://github.com/gurban-dev/ai-knowledge-platform-nextjs-fastify
+    repo: https://github.com/gurban-dev/ai-knowledge-platform-nextjs-fastapi
     branch: main
     healthCheckPath: /
     buildCommand: bash scripts/render-build-web.sh
