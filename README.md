@@ -19,6 +19,19 @@ Think of it as **ChatGPT for your company’s private knowledge**, but built
 like real B2B software: logins, organizations, permissions, audit trails, and
 monitoring, not a one-off demo.
 
+## Live demo
+
+**Web app:** [https://akp-web-dennis.onrender.com](https://akp-web-dennis.onrender.com)
+
+**API:** [https://akp-api-dennis.onrender.com](https://akp-api-dennis.onrender.com) · docs at [`/docs`](https://akp-api-dennis.onrender.com/docs)
+
+Hosted on [Render](https://render.com) (free tier). Free web services sleep after
+about 15 minutes of idle traffic, so the first request after a pause can take
+~30–60 seconds to wake. Free Postgres expires 30 days after creation.
+
+Demo logins (seeded): `owner@acme.test` / `Password123!`
+You can also create an account from `/register` on the live site.
+
 ### What you can do in the app
 
 - Create an organization and sign in (email/password or Google)
@@ -154,7 +167,7 @@ enforced for accounts that have it enabled.
 | Environment | Authorized JavaScript origins | Authorized redirect URI |
 |-------------|-------------------------------|-------------------------|
 | Local | `http://localhost:3000` | `http://localhost:3000/api/auth/google/callback` |
-| Production | `https://your-web-domain` | `https://your-web-domain/api/auth/google/callback` |
+| Production (Render) | `https://akp-web-dennis.onrender.com` | `https://akp-web-dennis.onrender.com/api/auth/google/callback` |
 
 3. Ensure `WEB_PUBLIC_URL` (and the browser origin) match that web domain exactly —
    the API allowlists only `{WEB_PUBLIC_URL}/api/auth/google/callback`.
@@ -162,7 +175,7 @@ enforced for accounts that have it enabled.
 4. Put the values in your `.env` (then restart `pnpm dev` / redeploy):
 
 ```bash
-WEB_PUBLIC_URL=http://localhost:3000   # or https://your-web-domain in production
+WEB_PUBLIC_URL=http://localhost:3000   # or https://akp-web-dennis.onrender.com in production
 GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=your-client-secret
 ```

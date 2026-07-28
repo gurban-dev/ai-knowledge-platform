@@ -18,6 +18,16 @@ describe('loadConfig', () => {
     expect(config.server.corsOrigins).toEqual(['http://localhost:3000']);
   });
 
+  it('adopts platform PORT when API_PORT is unset', () => {
+    const config = loadConfig({ ...baseEnv, PORT: '8080' });
+    expect(config.server.port).toBe(8080);
+  });
+
+  it('prefers explicit API_PORT over platform PORT', () => {
+    const config = loadConfig({ ...baseEnv, PORT: '8080', API_PORT: '4000' });
+    expect(config.server.port).toBe(4000);
+  });
+
   it('parses comma-separated CORS origins', () => {
     const config = loadConfig({ ...baseEnv, CORS_ORIGINS: 'https://a.com, https://b.com' });
     expect(config.server.corsOrigins).toEqual(['https://a.com', 'https://b.com']);
