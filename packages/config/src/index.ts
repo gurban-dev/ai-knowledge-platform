@@ -294,9 +294,19 @@ function shape(env: Env): AppConfig {
  * Parse and validate configuration from a raw env source (defaults to
  * `process.env`). Throws {@link ConfigValidationError} with all issues listed.
  * Pure and side-effect free so it can be called deterministically in tests.
+ *
+ * Hosting platforms (Render, Heroku, etc.) inject `PORT`. Prefer an explicit
+ * `API_PORT` when both are present; otherwise adopt `PORT`.
  */
 export function loadConfig(source: NodeJS.ProcessEnv = process.env): AppConfig {
-  const parsed = envSchema.safeParse(source);
+  const normalized: NodeJS.ProcessEnv = { ...source };
+  const apiPortUnset =
+    normalized.API_PORT === undefined || normalized.API_PORT === '';
+  if (apiPortUnset && normalized.PORT) {
+    normalized.API_PORT = normalized.PORT;
+  }
+
+  const parsed = envSchema.safeParse(normalized);
   if (!parsed.success) {
     const issues = parsed.error.issues.map(
       (issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`,
