@@ -13,7 +13,7 @@ services:
     ipAllowList: []
 
   - type: web
-    name: akp-fastapi-backend
+    name: ai-knowledge-platform-api
     runtime: node
     plan: free
     region: oregon

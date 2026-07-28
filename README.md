@@ -23,7 +23,7 @@ monitoring, not a one-off demo.
 
 **Web app:** [https://ai-knowledge-platform-app.onrender.com](https://ai-knowledge-platform-app.onrender.com)
 
-**API:** [https://akp-fastapi-backend.onrender.com](https://akp-fastapi-backend.onrender.com) · docs at [`/docs`](https://akp-fastapi-backend.onrender.com/docs)
+**API:** [https://ai-knowledge-platform-api.onrender.com](https://ai-knowledge-platform-api.onrender.com) · docs at [`/docs`](https://ai-knowledge-platform-api.onrender.com/docs)
 
 Hosted on [Render](https://render.com) (free tier). Free web services sleep after
 about 15 minutes of idle traffic, so the first request after a pause can take
