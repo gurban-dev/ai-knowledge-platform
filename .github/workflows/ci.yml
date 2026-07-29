@@ -30,7 +30,15 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then
+              exit 0
+            fi
+            echo "pnpm install failed (attempt ${attempt}/3); retrying in 30s..."
+            sleep 30
+          done
+          exit 1
 
       - name: Generate Prisma client
         run: pnpm db:generate
@@ -96,7 +104,15 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          for attempt in 1 2 3; do
+            if pnpm install --frozen-lockfile; then
+              exit 0
+            fi
+            echo "pnpm install failed (attempt ${attempt}/3); retrying in 30s..."
+            sleep 30
+          done
+          exit 1
 
       - name: Enable pgvector extension
         env:

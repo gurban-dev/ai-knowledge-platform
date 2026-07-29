@@ -7,10 +7,11 @@ peerDependencyRules:
     typescript: "5"
 
 allowBuilds:
-  '@nestjs/core': set this to true or false
+  '@nestjs/core': true
   '@prisma/client': true
   '@prisma/engines': true
-  '@scarf/scarf': set this to true or false
+  # Nest Swagger telemetry helper — no need to run its install script.
+  '@scarf/scarf': false
   argon2: true
   esbuild: true
   msgpackr-extract: true
