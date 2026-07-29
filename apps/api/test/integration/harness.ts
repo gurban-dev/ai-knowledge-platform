@@ -1,6 +1,5 @@
-import type { FastifyInstance } from 'fastify';
-import { Redis } from 'ioredis';
 import type { Redis as RedisClient } from 'ioredis';
+import { Redis } from 'ioredis';
 import { chunkText } from '@akp/ai';
 import { loadConfig } from '@akp/config';
 import { IdPrefix, newId } from '@akp/core';
@@ -9,12 +8,13 @@ import { createLogger } from '@akp/observability';
 import { buildApp } from '../../src/app.js';
 import { buildContainer, type AppContainer } from '../../src/container.js';
 import type { GoogleOAuthProvider } from '../../src/lib/google-oauth.js';
+import { wrapNestApp, type NestTestApp } from '../../src/nest/test-http.js';
 
 /** Integration tests run only when a test database is configured. */
 export const INTEGRATION_ENABLED = Boolean(process.env.TEST_DATABASE_URL);
 
 export interface TestHarness {
-  app: FastifyInstance;
+  app: NestTestApp;
   container: AppContainer;
   prisma: PrismaClient;
   redis: RedisClient;
@@ -40,8 +40,8 @@ export interface HarnessOptions {
 }
 
 /**
- * Spin up the real Fastify app wired to the test Postgres + Redis. Tests drive
- * it through `app.inject()` (no network socket) for speed and determinism.
+ * Spin up the real NestJS app wired to the test Postgres + Redis. Tests drive
+ * it through a Fastify-compatible `app.inject()` helper (supertest under the hood).
  */
 export async function createHarness(options: HarnessOptions = {}): Promise<TestHarness> {
   const databaseUrl = process.env.TEST_DATABASE_URL!;
@@ -66,7 +66,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<TestH
 
   const container = buildContainer({ config, logger, prisma, redis });
   if (options.googleOAuth) container.googleOAuth = options.googleOAuth;
-  const app = await buildApp({ container });
+  const nestApp = await buildApp({ container });
+  const app = wrapNestApp(nestApp);
 
   const ingest = async (organizationId: string, documentId: string): Promise<number> => {
     const doc = await prisma.document.findFirstOrThrow({
@@ -109,8 +110,6 @@ export async function createHarness(options: HarnessOptions = {}): Promise<TestH
   };
 
   const reset = async (): Promise<void> => {
-    // Truncate all domain tables; CASCADE handles FK order. Restart identity is
-    // unnecessary since ids are app-generated.
     await prisma.$executeRawUnsafe(`
       TRUNCATE TABLE
         "tool_invocations", "budget_periods", "subscriptions", "scim_tokens",

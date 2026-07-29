@@ -41,7 +41,7 @@ You can also create an account from `/register` on the live site.
 
 ### Built with
 
-TypeScript monorepo: **Next.js** (web), **Fastify** (API), **Postgres + pgvector**
+TypeScript monorepo: **Next.js** (web), **NestJS** (API), **Postgres + pgvector**
 (data/search), **Redis + BullMQ** (background jobs).
 
 ---

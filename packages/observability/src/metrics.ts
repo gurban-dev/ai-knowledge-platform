@@ -48,7 +48,7 @@ export const HTTP_LATENCY_BUCKETS = [
  * instrument the platform exports at `/metrics`. Centralizing definitions keeps
  * metric names, labels, and buckets consistent and prevents duplicate
  * registration (prom-client throws on collisions). HTTP instruments are driven
- * by the Fastify onResponse hook; AI instruments are driven by the usage
+ * by the Nest HTTP metrics interceptor; AI instruments are driven by the usage
  * pipeline whenever a model call is recorded.
  */
 export class AppMetrics {

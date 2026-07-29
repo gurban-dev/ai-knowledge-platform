@@ -19,7 +19,7 @@ conventions every contributor is expected to follow.
 
 ```
           ┌───────────┐        ┌──────────────────┐
-Browser ─▶ │  Next.js  │ ─────▶ │   Fastify  API   │ ─┬─▶ PostgreSQL + pgvector (+ RLS)
+Browser ─▶ │  Next.js  │ ─────▶ │   NestJS API     │ ─┬─▶ PostgreSQL + pgvector (+ RLS)
           │  (web)    │  REST  │  (apps/api)      │  │
           └───────────┘  /SSE  └──────────────────┘  ├─▶ Redis (cache, rate limit, BullMQ)
                                         │             │
@@ -44,10 +44,10 @@ AI agents ─── MCP / API key ────────────┤       
 ## API layering
 
 ```
-routes (HTTP + Zod) → services (use-cases) → repositories (Prisma only)
+Nest controllers (HTTP + Zod pipes) → services (use-cases) → repositories (Prisma only)
 ```
 
-Composition root: `apps/api/src/container.ts`.
+Composition root: `apps/api/src/container.ts`, wired into Nest via `AppModule.forRoot`.
 
 ## AuthN / AuthZ
 
@@ -76,5 +76,5 @@ Monthly spend tracked in `budget_periods` with hard-stop enforcement.
 ## Testing
 
 - Unit: Vitest (services, ACL, crypto, AI helpers)
-- Integration: Fastify `inject()` + real Postgres/Redis
+- Integration: Nest + supertest (`inject` helper) + real Postgres/Redis
 - Web E2E: Playwright smoke

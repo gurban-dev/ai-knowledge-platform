@@ -1,8 +1,9 @@
+import 'reflect-metadata';
 import { initTracing, shutdownTracing } from '@akp/observability/tracing';
 import { createLogger } from '@akp/observability';
 import { config } from './config.js';
 
-// Initialize tracing BEFORE importing any instrumented module (Fastify, pg,
+// Initialize tracing BEFORE importing any instrumented module (Express, pg,
 // ioredis). Auto-instrumentation can only patch modules loaded after this call.
 initTracing({
   enabled: config.observability.otelEnabled,
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
     process.on(signal, () => void shutdown(signal));
   }
 
-  await app.listen({ host: config.server.host, port: config.server.port });
+  await app.listen(config.server.port, config.server.host);
   logger.info(
     { url: config.server.publicUrl, docs: `${config.server.publicUrl}/docs` },
     'API server listening',
