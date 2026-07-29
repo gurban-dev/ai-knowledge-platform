@@ -7,7 +7,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '@akp/core';
-import { z } from 'zod';
+import type { z } from 'zod';
 import type { AppContainer } from '../../container.js';
 import type { AuthContext } from '../../nest/auth.types.js';
 import { AuthGuard } from '../../nest/auth.guard.js';

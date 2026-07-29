@@ -35,15 +35,13 @@ function normalize(error: unknown): AppError {
     if (status === 429) return new RateLimitError();
     if (status === 400) {
       const response = error.getResponse();
-      const message =
-        typeof response === 'string'
-          ? response
-          : typeof response === 'object' &&
-              response !== null &&
-              'message' in response &&
-              typeof (response as { message: unknown }).message === 'string'
-            ? (response as { message: string }).message
-            : 'Bad request';
+      let message = 'Bad request';
+      if (typeof response === 'string') {
+        message = response;
+      } else if (typeof response === 'object' && response !== null && 'message' in response) {
+        const candidate = response.message;
+        if (typeof candidate === 'string') message = candidate;
+      }
       return new ValidationError(message);
     }
     if (status === 404) return new NotFoundError('Route');

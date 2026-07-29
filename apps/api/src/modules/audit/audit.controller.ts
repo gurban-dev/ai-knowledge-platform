@@ -1,6 +1,6 @@
 import { Controller, Get, Inject, Query, UseGuards } from '@nestjs/common';
 import { Role } from '@akp/core';
-import { z } from 'zod';
+import type { z } from 'zod';
 import type { AppContainer } from '../../container.js';
 import type { AuthContext } from '../../nest/auth.types.js';
 import { paginationQuerySchema } from '../../lib/http.js';

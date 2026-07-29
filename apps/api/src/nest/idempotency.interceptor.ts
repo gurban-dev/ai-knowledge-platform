@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { IdPrefix, IdempotencyConflictError, newId } from '@akp/core';
 import type { Request, Response } from 'express';
-import { Observable, from, of, switchMap, tap } from 'rxjs';
+import { from, of, switchMap, tap, type Observable } from 'rxjs';
 import type { AppContainer } from '../container.js';
 import type { AuthContext } from './auth.types.js';
 import { APP_CONTAINER } from './tokens.js';

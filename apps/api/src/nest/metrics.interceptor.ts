@@ -22,7 +22,13 @@ export class MetricsInterceptor implements NestInterceptor {
     return next.handle().pipe(
       finalize(() => {
         const elapsedSec = Number(process.hrtime.bigint() - started) / 1e9;
-        const route = req.route?.path ? `${req.baseUrl}${req.route.path}` : req.path;
+        let routePath: string | undefined;
+        const routeMeta: unknown = req.route;
+        if (typeof routeMeta === 'object' && routeMeta !== null && 'path' in routeMeta) {
+          const pathValue = Reflect.get(routeMeta, 'path');
+          if (typeof pathValue === 'string') routePath = pathValue;
+        }
+        const route = routePath ? `${req.baseUrl}${routePath}` : req.path;
         const labels = {
           method: req.method,
           route,

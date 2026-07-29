@@ -4,7 +4,7 @@ export default [
   ...baseConfig,
 
   {
-    ignores: ['eslint.config.js'],
+    ignores: ['eslint.config.js', 'scripts/**'],
   },
 
   {
@@ -19,6 +19,7 @@ export default [
   {
     files: [
       'src/modules/**/*.routes.ts',
+      'src/modules/**/*.controller.ts',
     ],
     rules: {
       '@typescript-eslint/require-await': 'off',

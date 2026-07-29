@@ -53,7 +53,7 @@ export class EvaluationController {
   }
 
   @Post('quality')
-  async computeQuality(
+  computeQuality(
     @Body(new ZodValidationPipe(qualityBodySchema))
     body: z.infer<typeof qualityBodySchema>,
   ) {

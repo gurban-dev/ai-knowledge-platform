@@ -52,7 +52,7 @@ export async function inject(
 
   return {
     statusCode: res.status,
-    headers: res.headers as Record<string, string | string[] | undefined>,
+    headers: res.headers,
     body,
     json: <T = unknown>() => res.body as T,
   };

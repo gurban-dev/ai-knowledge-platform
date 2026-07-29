@@ -1,4 +1,5 @@
-import { createParamDecorator, ExecutionContext, SetMetadata } from '@nestjs/common';
+import { createParamDecorator, SetMetadata } from '@nestjs/common';
+import type { ExecutionContext } from '@nestjs/common';
 import type { Role } from '@akp/core';
 import type { ApiKeyContext, AuthContext } from './auth.types.js';
 
